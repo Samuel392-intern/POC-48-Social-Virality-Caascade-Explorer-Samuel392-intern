@@ -1,7 +1,7 @@
 'use client';
 
-import { useMemo } from "react";
-import type { CascadeData } from "@/types/cascade";
+import { useMemo } from 'react';
+import type { CascadeData } from '@/types/cascade';
 import {
   LineChart,
   Line,
@@ -12,7 +12,7 @@ import {
   ResponsiveContainer,
   ReferenceLine,
   Legend,
-} from "recharts";
+} from 'recharts';
 
 interface SpreadTimelineProps {
   data: CascadeData;
@@ -28,6 +28,50 @@ interface ChartPoint {
   activeSpreaders: number;
 }
 
+function formatCompact(
+  value: number,
+): string {
+  if (!Number.isFinite(value)) {
+    return '0';
+  }
+
+  if (value >= 1_000_000) {
+    return `${(
+      value / 1_000_000
+    ).toFixed(1)}M`;
+  }
+
+  if (value >= 1_000) {
+    return `${(
+      value / 1_000
+    ).toFixed(1)}K`;
+  }
+
+  return String(
+    Math.round(value),
+  );
+}
+
+function getSpreadInterpretation(
+  point: ChartPoint,
+): string {
+  if (
+    point.velocity >= 5 &&
+    point.activeSpreaders >= 3
+  ) {
+    return 'ACTIVE AMPLIFICATION';
+  }
+
+  if (
+    point.velocity > 0 &&
+    point.activeSpreaders > 0
+  ) {
+    return 'PROPAGATION UNDERWAY';
+  }
+
+  return 'LOW CURRENT MOMENTUM';
+}
+
 export default function SpreadTimeline({
   data,
   currentTime,
@@ -39,23 +83,33 @@ export default function SpreadTimeline({
   } = useMemo(() => {
     const sorted = [...data.metrics]
       .map((metric) => ({
-        timestamp: new Date(
-          metric.timestamp,
-        ).getTime(),
+        timestamp:
+          new Date(
+            metric.timestamp,
+          ).getTime(),
+
         views: metric.views,
-        reposts: metric.reposts,
-        velocity: metric.velocity,
+
+        reposts:
+          metric.reposts,
+
+        velocity:
+          metric.velocity,
+
         activeSpreaders:
           metric.active_spreaders,
       }))
       .sort(
         (a, b) =>
-          a.timestamp - b.timestamp,
+          a.timestamp -
+          b.timestamp,
       );
 
     if (sorted.length === 0) {
       return {
-        chartData: [] as ChartPoint[],
+        chartData:
+          [] as ChartPoint[],
+
         activeTimestamp: 0,
       };
     }
@@ -64,8 +118,9 @@ export default function SpreadTimeline({
       sorted[0].timestamp;
 
     const last =
-      sorted[sorted.length - 1]
-        .timestamp;
+      sorted[
+        sorted.length - 1
+      ].timestamp;
 
     const replayRatio =
       duration > 0
@@ -73,13 +128,16 @@ export default function SpreadTimeline({
             0,
             Math.min(
               1,
-              currentTime / duration,
+              currentTime /
+                duration,
             ),
           )
         : 0;
 
     return {
-      chartData: sorted,
+      chartData:
+        sorted,
+
       activeTimestamp:
         first +
         replayRatio *
@@ -91,42 +149,30 @@ export default function SpreadTimeline({
     duration,
   ]);
 
+  const latest =
+    chartData[
+      chartData.length - 1
+    ];
+
   const formatTick = (
     value: number,
   ) =>
-    new Date(value).toLocaleTimeString(
+    new Date(
+      value,
+    ).toLocaleTimeString(
       [],
       {
-        hour: "2-digit",
-        minute: "2-digit",
+        hour: '2-digit',
+        minute: '2-digit',
       },
     );
-
-  const formatCompact = (
-    value: number,
-  ) => {
-    if (value >= 1_000_000) {
-      return `${(
-        value / 1_000_000
-      ).toFixed(1)}M`;
-    }
-
-    if (value >= 1_000) {
-      return `${(
-        value / 1_000
-      ).toFixed(1)}K`;
-    }
-
-    return String(
-      Math.round(value),
-    );
-  };
 
   const CustomTooltip = ({
     active,
     payload,
   }: {
     active?: boolean;
+
     payload?: Array<{
       payload: ChartPoint;
     }>;
@@ -143,47 +189,79 @@ export default function SpreadTimeline({
       payload[0].payload;
 
     return (
-      <div className="rounded-lg border border-zinc-700 bg-zinc-900 p-3 text-xs text-white shadow-xl">
-        <p className="font-semibold">
+      <div className="min-w-[220px] border border-rails-border bg-rails-surface/95 p-3 text-white shadow-2xl backdrop-blur-sm">
+        <div className="font-mono text-[9px] uppercase tracking-[0.14em] text-rails-textMuted">
+          Distribution Signal
+        </div>
+
+        <p className="mt-1 text-xs font-semibold text-white">
           {new Date(
             point.timestamp,
-          ).toLocaleTimeString([], {
-            hour: "2-digit",
-            minute: "2-digit",
-            second: "2-digit",
-          })}
+          ).toLocaleTimeString(
+            [],
+            {
+              hour: '2-digit',
+              minute:
+                '2-digit',
+              second:
+                '2-digit',
+            },
+          )}
         </p>
 
-        <div className="mt-2 space-y-1 text-gray-300">
-          <p>
-            Cumulative views:{" "}
-            <span className="font-mono font-bold text-emerald-400">
+        <div className="mt-3 space-y-2 border-t border-rails-border pt-3">
+          <div className="flex items-center justify-between gap-4">
+            <span className="text-[10px] text-rails-textMuted">
+              Cumulative views
+            </span>
+
+            <span className="font-mono text-xs font-semibold text-rails-cyan">
               {point.views.toLocaleString()}
             </span>
-          </p>
+          </div>
 
-          <p>
-            Reposts:{" "}
-            <span className="font-mono font-bold text-blue-400">
+          <div className="flex items-center justify-between gap-4">
+            <span className="text-[10px] text-rails-textMuted">
+              Reposts
+            </span>
+
+            <span className="font-mono text-xs font-semibold text-rails-indigo">
               {point.reposts}
             </span>
-          </p>
+          </div>
 
-          <p>
-            Velocity:{" "}
-            <span className="font-mono font-bold text-purple-400">
+          <div className="flex items-center justify-between gap-4">
+            <span className="text-[10px] text-rails-textMuted">
+              Velocity
+            </span>
+
+            <span className="font-mono text-xs font-semibold text-white">
               {point.velocity.toFixed(
                 1,
-              )}/min
+              )}
+              /min
             </span>
-          </p>
+          </div>
 
-          <p>
-            Active spreaders:{" "}
-            <span className="font-mono font-bold text-gray-100">
-              {point.activeSpreaders}
+          <div className="flex items-center justify-between gap-4">
+            <span className="text-[10px] text-rails-textMuted">
+              Active spreaders
             </span>
-          </p>
+
+            <span className="font-mono text-xs font-semibold text-white">
+              {
+                point.activeSpreaders
+              }
+            </span>
+          </div>
+        </div>
+
+        <div className="mt-3 border-t border-rails-border pt-2">
+          <div className="font-mono text-[8px] uppercase tracking-[0.12em] text-rails-cyan">
+            {getSpreadInterpretation(
+              point,
+            )}
+          </div>
         </div>
       </div>
     );
@@ -191,40 +269,49 @@ export default function SpreadTimeline({
 
   if (chartData.length === 0) {
     return (
-      <div className="flex h-[220px] items-center justify-center text-sm text-gray-500">
-        No spread metrics available.
+      <div className="flex h-[240px] items-center justify-center border border-rails-border bg-slate-950/20 text-xs text-rails-textMuted">
+        No spread metrics available for the current
+        scenario.
       </div>
     );
   }
 
   return (
     <div className="w-full">
-      <div className="mb-2 grid grid-cols-2 gap-2 text-xs">
-        <div className="rounded-lg bg-zinc-950 p-2">
-          <div className="text-gray-500">
-            Current views
+      {/* Signal summary */}
+      <div className="mb-4 grid grid-cols-2 gap-2">
+        <div className="border border-rails-border bg-slate-950/30 p-3">
+          <div className="font-mono text-[8px] uppercase tracking-[0.14em] text-rails-textMuted">
+            Current Exposure
           </div>
-          <div className="font-mono font-semibold text-emerald-400">
+
+          <div className="mt-1 text-xl font-semibold text-rails-cyan">
             {formatCompact(
-              chartData[
-                chartData.length - 1
-              ].views,
+              latest.views,
             )}
+          </div>
+
+          <div className="mt-0.5 text-[10px] text-rails-textMuted">
+            cumulative synthetic views
           </div>
         </div>
 
-        <div className="rounded-lg bg-zinc-950 p-2">
-          <div className="text-gray-500">
-            Current reposts
+        <div className="border border-rails-border bg-slate-950/30 p-3">
+          <div className="font-mono text-[8px] uppercase tracking-[0.14em] text-rails-textMuted">
+            Current Reposts
           </div>
-          <div className="font-mono font-semibold text-blue-400">
-            {chartData[
-              chartData.length - 1
-            ].reposts}
+
+          <div className="mt-1 text-xl font-semibold text-rails-indigo">
+            {latest.reposts}
+          </div>
+
+          <div className="mt-0.5 text-[10px] text-rails-textMuted">
+            reposts in interval
           </div>
         </div>
       </div>
 
+      {/* Chart */}
       <div className="h-[195px] w-full">
         <ResponsiveContainer
           width="100%"
@@ -234,38 +321,43 @@ export default function SpreadTimeline({
             data={chartData}
             margin={{
               top: 10,
-              right: 10,
+              right: 8,
               left: -20,
               bottom: 0,
             }}
           >
             <CartesianGrid
               strokeDasharray="3 3"
-              stroke="#374151"
-              opacity={0.2}
+              stroke="#1F2937"
+              opacity={0.7}
             />
 
             <XAxis
               dataKey="timestamp"
               type="number"
               domain={[
-                "dataMin",
-                "dataMax",
+                'dataMin',
+                'dataMax',
               ]}
               tickFormatter={
                 formatTick
               }
-              stroke="#9ca3af"
-              fontSize={10}
+              stroke="#64748B"
+              fontSize={9}
               tickLine={false}
+              axisLine={{
+                stroke:
+                  '#1F2937',
+              }}
               dy={8}
             />
 
             <YAxis
               yAxisId="views"
-              stroke="#9ca3af"
-              fontSize={10}
+              stroke="#64748B"
+              fontSize={9}
               tickLine={false}
+              axisLine={false}
               dx={-8}
               tickFormatter={
                 formatCompact
@@ -275,9 +367,10 @@ export default function SpreadTimeline({
             <YAxis
               yAxisId="reposts"
               orientation="right"
-              stroke="#9ca3af"
-              fontSize={10}
+              stroke="#64748B"
+              fontSize={9}
               tickLine={false}
+              axisLine={false}
               tickFormatter={
                 formatCompact
               }
@@ -287,23 +380,39 @@ export default function SpreadTimeline({
               content={
                 <CustomTooltip />
               }
+              cursor={{
+                stroke:
+                  '#38BDF8',
+                strokeOpacity:
+                  0.18,
+              }}
             />
 
             <Legend
               wrapperStyle={{
-                fontSize: 10,
+                fontSize: 9,
+                color: '#94A3B8',
+                paddingTop:
+                  8,
               }}
+              iconSize={7}
             />
 
             <Line
               yAxisId="views"
               type="monotone"
               dataKey="views"
-              name="Views"
-              stroke="#34d399"
+              name="Exposure"
+              stroke="#38BDF8"
               strokeWidth={2}
               dot={false}
-              activeDot={{ r: 4 }}
+              activeDot={{
+                r: 4,
+                fill: '#38BDF8',
+                stroke:
+                  '#030712',
+                strokeWidth: 2,
+              }}
             />
 
             <Line
@@ -311,29 +420,55 @@ export default function SpreadTimeline({
               type="monotone"
               dataKey="reposts"
               name="Reposts / interval"
-              stroke="#3b82f6"
+              stroke="#818CF8"
               strokeWidth={2}
-              dot={{ r: 2 }}
-              activeDot={{ r: 4 }}
+              dot={{
+                r: 1.5,
+                fill: '#818CF8',
+                stroke:
+                  '#818CF8',
+              }}
+              activeDot={{
+                r: 4,
+                fill: '#818CF8',
+                stroke:
+                  '#030712',
+                strokeWidth: 2,
+              }}
             />
 
             {currentTime > 0 && (
               <ReferenceLine
-                x={activeTimestamp}
-                stroke="#f59e0b"
-                strokeWidth={1.5}
+                x={
+                  activeTimestamp
+                }
+                stroke="#38BDF8"
+                strokeWidth={1}
                 strokeDasharray="3 3"
                 label={{
-                  value: "REPLAY",
-                  fill: "#f59e0b",
+                  value:
+                    'REPLAY',
+                  fill:
+                    '#38BDF8',
                   fontSize: 8,
-                  position: "top",
-                  fontWeight: "bold",
+                  position:
+                    'top',
+                  fontWeight:
+                    'bold',
                 }}
               />
             )}
           </LineChart>
         </ResponsiveContainer>
+      </div>
+
+      <div className="mt-2 border-t border-rails-border pt-2">
+        <p className="text-[10px] leading-4 text-rails-textMuted">
+          The exposure curve shows cumulative downstream
+          attention while the repost signal shows active
+          propagation. Divergence between the two helps
+          distinguish audience size from active distribution.
+        </p>
       </div>
     </div>
   );

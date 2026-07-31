@@ -14,6 +14,10 @@ import type {
   PropagationEvent,
 } from '@/types/cascade';
 
+/*
+ * The outer graph container remains fixed.
+ * This only scales the graph drawing internally.
+ */
 const GRAPH_SCALE = 1.25;
 
 interface CascadeGraphProps {
@@ -46,41 +50,83 @@ interface TooltipState {
   connections: number;
 }
 
-/**
- * Generate a deterministic color from the node ID.
+/* -------------------------------------------------------------------------- */
+/*                           REAL RAILS NODE COLORS                           */
+/* -------------------------------------------------------------------------- */
+
+/*
+ * The protocol uses cyan + indigo as the primary interaction palette.
  *
- * The seed remains orange so it remains visually identifiable.
- * Every other node gets a stable hue derived from its ID.
+ * We still give individual nodes different colors, but we constrain the
+ * palette to cyan/indigo/blue variants rather than using a rainbow spectrum.
  */
 function getNodeColor(
   nodeId: string,
   role: CascadeNode['role'],
 ): string {
   if (role === 'seed') {
-    return '#f59e0b';
+    return '#38BDF8';
   }
 
   let hash = 0;
 
-  for (let index = 0; index < nodeId.length; index += 1) {
+  for (
+    let index = 0;
+    index < nodeId.length;
+    index += 1
+  ) {
     hash =
       nodeId.charCodeAt(index) +
       ((hash << 5) - hash);
   }
 
-  const normalizedHash =
+  const normalized =
     Math.abs(hash);
 
-  // Golden-angle style distribution gives much better
-  // separation between adjacent node colors.
-  const hue =
-    (normalizedHash * 137.508) % 360;
-
   if (role === 'amplifier') {
-    return `hsl(${hue}, 82%, 62%)`;
+    const amplifierPalette = [
+      '#818CF8',
+      '#60A5FA',
+      '#38BDF8',
+      '#A5B4FC',
+      '#7DD3FC',
+    ];
+
+    return amplifierPalette[
+      normalized %
+        amplifierPalette.length
+    ];
   }
 
-  return `hsl(${hue}, 68%, 52%)`;
+  const participantPalette = [
+    '#38BDF8',
+    '#60A5FA',
+    '#67E8F9',
+    '#818CF8',
+    '#94A3B8',
+    '#7DD3FC',
+    '#A5B4FC',
+  ];
+
+  return participantPalette[
+    normalized %
+      participantPalette.length
+  ];
+}
+
+function getRoleLabel(
+  role: CascadeNode['role'],
+): string {
+  switch (role) {
+    case 'seed':
+      return 'SEED';
+
+    case 'amplifier':
+      return 'AMPLIFIER';
+
+    default:
+      return 'PARTICIPANT';
+  }
 }
 
 function getNodeRadius(
@@ -118,12 +164,21 @@ function getNodeRadius(
   );
 }
 
+/* -------------------------------------------------------------------------- */
+/*                              GRAPH BACKGROUND                              */
+/* -------------------------------------------------------------------------- */
+
 function drawBackground(
   context: CanvasRenderingContext2D,
   width: number,
   height: number,
 ) {
-  context.fillStyle = '#09090b';
+  /*
+   * Mandatory Real Rails base.
+   */
+  context.fillStyle =
+    '#030712';
+
   context.fillRect(
     0,
     0,
@@ -131,7 +186,9 @@ function drawBackground(
     height,
   );
 
-  // Subtle radial glow around the center.
+  /*
+   * Subtle central cyan/indigo intelligence glow.
+   */
   const gradient =
     context.createRadialGradient(
       width / 2,
@@ -139,25 +196,29 @@ function drawBackground(
       20,
       width / 2,
       height / 2,
-      Math.max(width, height) * 0.6,
+      Math.max(
+        width,
+        height,
+      ) * 0.62,
     );
 
   gradient.addColorStop(
     0,
-    'rgba(37, 99, 235, 0.08)',
+    'rgba(56, 189, 248, 0.07)',
   );
 
   gradient.addColorStop(
-    0.45,
-    'rgba(59, 130, 246, 0.025)',
+    0.38,
+    'rgba(129, 140, 248, 0.035)',
   );
 
   gradient.addColorStop(
     1,
-    'rgba(9, 9, 11, 0)',
+    'rgba(3, 7, 18, 0)',
   );
 
-  context.fillStyle = gradient;
+  context.fillStyle =
+    gradient;
 
   context.fillRect(
     0,
@@ -166,11 +227,13 @@ function drawBackground(
     height,
   );
 
-  // Fine dot grid.
+  /*
+   * Fine intelligence-terminal dot matrix.
+   */
   context.fillStyle =
-    'rgba(148, 163, 184, 0.10)';
+    'rgba(148, 163, 184, 0.075)';
 
-  const spacing = 28;
+  const spacing = 30;
 
   for (
     let x = spacing;
@@ -187,7 +250,7 @@ function drawBackground(
       context.arc(
         x,
         y,
-        0.8,
+        0.65,
         0,
         Math.PI * 2,
       );
@@ -195,7 +258,26 @@ function drawBackground(
       context.fill();
     }
   }
+
+  /*
+   * Very subtle border lines around the canvas.
+   */
+  context.strokeStyle =
+    'rgba(31, 41, 55, 0.75)';
+
+  context.lineWidth = 1;
+
+  context.strokeRect(
+    0.5,
+    0.5,
+    width - 1,
+    height - 1,
+  );
 }
+
+/* -------------------------------------------------------------------------- */
+/*                              MAIN COMPONENT                                */
+/* -------------------------------------------------------------------------- */
 
 export default function CascadeGraph({
   data,
@@ -231,96 +313,117 @@ export default function CascadeGraph({
       null,
     );
 
-  const visibleNodes = useMemo(
-    () =>
-      new Set(
-        data.nodes.map(
-          (node) => node.id,
-        ),
-      ),
-    [data.nodes],
-  );
+  /* ------------------------------------------------------------------------ */
+  /*                           VISIBLE NODE INDEX                             */
+  /* ------------------------------------------------------------------------ */
 
-  /**
-   * Derive graph links directly from the event causality.
-   *
-   * parent_event_id -> parent actor -> child actor
-   */
-  const edges = useMemo<GraphEdge[]>(
-    () => {
-      const eventLookup =
-        new Map(
-          data.events.map(
-            (event) => [
-              event.id,
-              event,
-            ],
+  const visibleNodes =
+    useMemo(
+      () =>
+        new Set(
+          data.nodes.map(
+            (node) =>
+              node.id,
           ),
-        );
+        ),
+      [data.nodes],
+    );
 
-      return data.events
-        .filter(
-          (event) =>
-            event.parent_event_id !==
-            null,
-        )
-        .map((event) => {
-          const parent =
-            eventLookup.get(
-              event.parent_event_id!,
-            );
+  /* ------------------------------------------------------------------------ */
+  /*                             GRAPH EDGES                                  */
+  /* ------------------------------------------------------------------------ */
 
-          if (!parent) {
-            return null;
-          }
+  const edges =
+    useMemo<GraphEdge[]>(
+      () => {
+        const eventLookup =
+          new Map(
+            data.events.map(
+              (event) => [
+                event.id,
+                event,
+              ],
+            ),
+          );
 
-          if (
-            !visibleNodes.has(
-              parent.actor_id,
-            ) ||
-            !visibleNodes.has(
-              event.actor_id,
-            )
-          ) {
-            return null;
-          }
+        return data.events
+          .filter(
+            (event) =>
+              event.parent_event_id !==
+              null,
+          )
+          .map((event) => {
+            const parent =
+              eventLookup.get(
+                event.parent_event_id!,
+              );
 
-          // Don't draw self-links.
-          if (
-            parent.actor_id ===
-            event.actor_id
-          ) {
-            return null;
-          }
+            if (!parent) {
+              return null;
+            }
 
-          return {
-            id: event.id,
-            source: parent.actor_id,
-            target: event.actor_id,
-            timestamp:
-              event.timestamp,
-            action:
-              event.action,
-            depth: event.depth,
-          };
-        })
-        .filter(
-          (
-            edge,
-          ): edge is GraphEdge =>
-            edge !== null,
-        );
-    },
-    [
-      data.events,
-      visibleNodes,
-    ],
-  );
+            /*
+             * Both actors must exist in the currently visible graph.
+             */
+            if (
+              !visibleNodes.has(
+                parent.actor_id,
+              ) ||
+              !visibleNodes.has(
+                event.actor_id,
+              )
+            ) {
+              return null;
+            }
+
+            /*
+             * Avoid rendering meaningless self-links.
+             */
+            if (
+              parent.actor_id ===
+              event.actor_id
+            ) {
+              return null;
+            }
+
+            return {
+              id: event.id,
+              source:
+                parent.actor_id,
+              target:
+                event.actor_id,
+              timestamp:
+                event.timestamp,
+              action:
+                event.action,
+              depth:
+                event.depth,
+            };
+          })
+          .filter(
+            (
+              edge,
+            ): edge is GraphEdge =>
+              edge !== null,
+          );
+      },
+      [
+        data.events,
+        visibleNodes,
+      ],
+    );
+
+  /* ------------------------------------------------------------------------ */
+  /*                         CONNECTION COUNTS                                */
+  /* ------------------------------------------------------------------------ */
 
   const edgeByNode =
     useMemo(() => {
       const map =
-        new Map<string, number>();
+        new Map<
+          string,
+          number
+        >();
 
       for (const edge of edges) {
         map.set(
@@ -341,10 +444,10 @@ export default function CascadeGraph({
       return map;
     }, [edges]);
 
-  /**
-   * Keep the canvas dimensions synchronized with
-   * the fixed outer graph container.
-   */
+  /* ------------------------------------------------------------------------ */
+  /*                           RESIZE OBSERVER                                */
+  /* ------------------------------------------------------------------------ */
+
   useEffect(() => {
     if (!containerRef.current) {
       return;
@@ -365,8 +468,13 @@ export default function CascadeGraph({
             height: rect.height,
           };
 
-          setWidth(rect.width);
-          setHeight(rect.height);
+          setWidth(
+            rect.width,
+          );
+
+          setHeight(
+            rect.height,
+          );
         },
       );
 
@@ -379,9 +487,10 @@ export default function CascadeGraph({
     };
   }, []);
 
-  /**
-   * Draw the current graph frame.
-   */
+  /* ------------------------------------------------------------------------ */
+  /*                                DRAW                                      */
+  /* ------------------------------------------------------------------------ */
+
   const draw =
     useCallback(() => {
       const canvas =
@@ -429,11 +538,9 @@ export default function CascadeGraph({
       const centerY =
         heightPx / 2;
 
-      /**
-       * Visual graph zoom.
-       *
-       * The outer container remains exactly the same
-       * size. Only the canvas drawing is enlarged.
+      /*
+       * The graph is scaled internally.
+       * The outer flexbox/container size remains unchanged.
        */
       context.save();
 
@@ -465,10 +572,13 @@ export default function CascadeGraph({
           ),
         );
 
-      /**
-       * Draw edges first so nodes render above them.
-       */
-      for (const edge of edges) {
+      /* -------------------------------------------------------------------- */
+      /*                                EDGES                                 */
+      /* -------------------------------------------------------------------- */
+
+      for (
+        const edge of edges
+      ) {
         const source =
           nodeLookup.get(
             edge.source,
@@ -479,24 +589,26 @@ export default function CascadeGraph({
             edge.target,
           );
 
-        if (!source || !target) {
+        if (
+          !source ||
+          !target
+        ) {
           continue;
         }
 
         const dx =
-          target.x - source.x;
+          target.x -
+          source.x;
 
         const dy =
-          target.y - source.y;
-
-        const distance =
-          Math.sqrt(
-            dx * dx +
-              dy * dy,
-          ) || 1;
+          target.y -
+          source.y;
 
         const angle =
-          Math.atan2(dy, dx);
+          Math.atan2(
+            dy,
+            dx,
+          );
 
         context.beginPath();
 
@@ -510,23 +622,31 @@ export default function CascadeGraph({
           target.y,
         );
 
-        context.strokeStyle =
+        /*
+         * Reposts are the important propagation edges,
+         * therefore they receive the stronger cyan signal.
+         */
+        if (
           edge.action ===
           'repost'
-            ? 'rgba(96, 165, 250, 0.52)'
-            : 'rgba(113, 113, 122, 0.22)';
+        ) {
+          context.strokeStyle =
+            'rgba(56, 189, 248, 0.46)';
 
-        context.lineWidth =
-          edge.action ===
-          'repost'
-            ? 2
-            : 1;
+          context.lineWidth = 2;
+        } else {
+          context.strokeStyle =
+            'rgba(100, 116, 139, 0.20)';
+
+          context.lineWidth = 1;
+        }
 
         context.stroke();
 
-        /**
-         * Direction arrow.
-         */
+        /* --------------------------------------------------------------- */
+        /*                           ARROWHEAD                              */
+        /* --------------------------------------------------------------- */
+
         const arrowX =
           source.x +
           dx * 0.7;
@@ -544,8 +664,8 @@ export default function CascadeGraph({
         context.fillStyle =
           edge.action ===
           'repost'
-            ? 'rgba(147, 197, 253, 0.82)'
-            : 'rgba(161, 161, 170, 0.35)';
+            ? 'rgba(56, 189, 248, 0.85)'
+            : 'rgba(148, 163, 184, 0.38)';
 
         context.beginPath();
 
@@ -585,18 +705,17 @@ export default function CascadeGraph({
         );
 
         context.closePath();
-        context.fill();
 
-        // Keep TypeScript aware that distance is intentionally
-        // calculated for the edge frame and useful for future
-        // edge styling.
-        void distance;
+        context.fill();
       }
 
-      /**
-       * Draw nodes.
-       */
-      for (const node of nodes) {
+      /* -------------------------------------------------------------------- */
+      /*                                NODES                                 */
+      /* -------------------------------------------------------------------- */
+
+      for (
+        const node of nodes
+      ) {
         const isInfluencer =
           data.influencers.some(
             (influencer) =>
@@ -610,28 +729,28 @@ export default function CascadeGraph({
             node.role,
           );
 
-        /**
-         * Influencer glow uses the node's own color
-         * rather than a universal blue halo.
-         */
+        /* --------------------------------------------------------------- */
+        /*                       INFLUENCER GLOW                           */
+        /* --------------------------------------------------------------- */
+
         if (isInfluencer) {
           context.save();
 
           context.globalAlpha =
-            0.16;
+            0.14;
 
           context.shadowColor =
             color;
 
           context.shadowBlur =
-            18;
+            20;
 
           context.beginPath();
 
           context.arc(
             node.x,
             node.y,
-            node.radius + 7,
+            node.radius + 8,
             0,
             Math.PI * 2,
           );
@@ -644,9 +763,10 @@ export default function CascadeGraph({
           context.restore();
         }
 
-        /**
-         * Soft node glow.
-         */
+        /* --------------------------------------------------------------- */
+        /*                           NODE GLOW                              */
+        /* --------------------------------------------------------------- */
+
         context.save();
 
         context.shadowColor =
@@ -655,7 +775,7 @@ export default function CascadeGraph({
         context.shadowBlur =
           isInfluencer
             ? 14
-            : 8;
+            : 7;
 
         context.beginPath();
 
@@ -674,9 +794,10 @@ export default function CascadeGraph({
 
         context.restore();
 
-        /**
-         * Node border.
-         */
+        /* --------------------------------------------------------------- */
+        /*                         NODE BORDER                              */
+        /* --------------------------------------------------------------- */
+
         context.beginPath();
 
         context.arc(
@@ -689,8 +810,8 @@ export default function CascadeGraph({
 
         context.strokeStyle =
           isInfluencer
-            ? 'rgba(255, 255, 255, 0.88)'
-            : 'rgba(255, 255, 255, 0.22)';
+            ? 'rgba(255, 255, 255, 0.92)'
+            : 'rgba(226, 232, 240, 0.25)';
 
         context.lineWidth =
           isInfluencer
@@ -699,15 +820,48 @@ export default function CascadeGraph({
 
         context.stroke();
 
-        /**
-         * Labels.
-         */
+        /* --------------------------------------------------------------- */
+        /*                        SEED INNER RING                           */
+        /* --------------------------------------------------------------- */
+
+        if (
+          node.role ===
+          'seed'
+        ) {
+          context.beginPath();
+
+          context.arc(
+            node.x,
+            node.y,
+            Math.max(
+              2,
+              node.radius -
+                4,
+            ),
+            0,
+            Math.PI * 2,
+          );
+
+          context.strokeStyle =
+            'rgba(3, 7, 18, 0.65)';
+
+          context.lineWidth =
+            1.5;
+
+          context.stroke();
+        }
+
+        /* --------------------------------------------------------------- */
+        /*                             LABEL                                */
+        /* --------------------------------------------------------------- */
+
         if (showLabels) {
           context.fillStyle =
-            'rgba(244, 244, 245, 0.95)';
+            'rgba(241, 245, 249, 0.96)';
 
           context.font =
-            node.radius >= 15
+            node.radius >=
+            15
               ? '600 10px sans-serif'
               : '600 9px sans-serif';
 
@@ -738,9 +892,10 @@ export default function CascadeGraph({
       showLabels,
     ]);
 
-  /**
-   * Force simulation.
-   */
+  /* ------------------------------------------------------------------------ */
+  /*                            FORCE SIMULATION                              */
+  /* ------------------------------------------------------------------------ */
+
   const simulate =
     useCallback(() => {
       const {
@@ -774,23 +929,28 @@ export default function CascadeGraph({
       const centerY =
         heightPx / 2;
 
-      /**
-       * Stronger center gravity keeps the enlarged
-       * network visually centered.
+      /*
+       * Slightly stronger central gravity keeps the graph
+       * centered even when visual scaling is increased.
        */
-      for (const node of nodes) {
+      for (
+        const node of nodes
+      ) {
         node.vx +=
-          (centerX - node.x) *
+          (centerX -
+            node.x) *
           0.002;
 
         node.vy +=
-          (centerY - node.y) *
+          (centerY -
+            node.y) *
           0.002;
       }
 
-      /**
-       * Pairwise repulsion.
-       */
+      /* ------------------------------------------------------------------ */
+      /*                           REPULSION                                 */
+      /* ------------------------------------------------------------------ */
+
       for (
         let i = 0;
         i < nodes.length;
@@ -855,10 +1015,13 @@ export default function CascadeGraph({
         }
       }
 
-      /**
-       * Link attraction.
-       */
-      for (const edge of edges) {
+      /* ------------------------------------------------------------------ */
+      /*                         LINK ATTRACTION                             */
+      /* ------------------------------------------------------------------ */
+
+      for (
+        const edge of edges
+      ) {
         const source =
           nodeLookup.get(
             edge.source,
@@ -869,15 +1032,20 @@ export default function CascadeGraph({
             edge.target,
           );
 
-        if (!source || !target) {
+        if (
+          !source ||
+          !target
+        ) {
           continue;
         }
 
         const dx =
-          target.x - source.x;
+          target.x -
+          source.x;
 
         const dy =
-          target.y - source.y;
+          target.y -
+          source.y;
 
         const distance =
           Math.sqrt(
@@ -913,45 +1081,49 @@ export default function CascadeGraph({
           uy * pull;
       }
 
-      /**
-       * Integrate.
-       */
-      for (const node of nodes) {
+      /* ------------------------------------------------------------------ */
+      /*                            INTEGRATE                                */
+      /* ------------------------------------------------------------------ */
+
+      for (
+        const node of nodes
+      ) {
         node.vx *= 0.88;
         node.vy *= 0.88;
 
         node.x += node.vx;
         node.y += node.vy;
 
-        /**
-         * Keep nodes inside a slightly padded simulation
-         * area so visual scaling doesn't immediately clip them.
-         */
         const padding =
           node.radius +
           8;
 
-        node.x = Math.max(
-          padding,
-          Math.min(
-            widthPx - padding,
-            node.x,
-          ),
-        );
+        node.x =
+          Math.max(
+            padding,
+            Math.min(
+              widthPx -
+                padding,
+              node.x,
+            ),
+          );
 
-        node.y = Math.max(
-          padding,
-          Math.min(
-            heightPx - padding,
-            node.y,
-          ),
-        );
+        node.y =
+          Math.max(
+            padding,
+            Math.min(
+              heightPx -
+                padding,
+              node.y,
+            ),
+          );
       }
     }, [edges]);
 
-  /**
-   * Synchronize simulated nodes with incoming data.
-   */
+  /* ------------------------------------------------------------------------ */
+  /*                         DATA SYNCHRONIZATION                            */
+  /* ------------------------------------------------------------------------ */
+
   useEffect(() => {
     if (
       width <= 0 ||
@@ -996,9 +1168,9 @@ export default function CascadeGraph({
             Math.PI *
             2;
 
-          /**
-           * Larger starting spread because the graph
-           * is intentionally visually larger.
+          /*
+           * Start the graph with a wider distribution so
+           * the internal 1.25x scale has useful space.
            */
           const initialDistance =
             Math.min(
@@ -1044,14 +1216,16 @@ export default function CascadeGraph({
     nodeSizeScaling,
   ]);
 
-  /**
-   * Keep radii synchronized with the size slider.
-   */
+  /* ------------------------------------------------------------------------ */
+  /*                           RADIUS SYNC                                   */
+  /* ------------------------------------------------------------------------ */
+
   useEffect(() => {
     nodesRef.current =
       nodesRef.current.map(
         (node) => ({
           ...node,
+
           radius:
             getNodeRadius(
               node,
@@ -1061,9 +1235,10 @@ export default function CascadeGraph({
       );
   }, [nodeSizeScaling]);
 
-  /**
-   * Animation loop.
-   */
+  /* ------------------------------------------------------------------------ */
+  /*                          ANIMATION LOOP                                 */
+  /* ------------------------------------------------------------------------ */
+
   useEffect(() => {
     const animate =
       () => {
@@ -1096,12 +1271,10 @@ export default function CascadeGraph({
     simulate,
   ]);
 
-  /**
-   * Mouse interaction.
-   *
-   * Convert screen coordinates back through the
-   * graph's visual scale so hover still tracks nodes.
-   */
+  /* ------------------------------------------------------------------------ */
+  /*                            MOUSE HOVER                                  */
+  /* ------------------------------------------------------------------------ */
+
   const handleMouseMove =
     (
       event: React.MouseEvent<HTMLCanvasElement>,
@@ -1142,6 +1315,9 @@ export default function CascadeGraph({
         dimensionsRef.current.height /
         2;
 
+      /*
+       * Reverse the internal visual scale for hit testing.
+       */
       const mouseX =
         centerX +
         (rawMouseX -
@@ -1158,10 +1334,12 @@ export default function CascadeGraph({
         nodesRef.current.find(
           (node) => {
             const dx =
-              mouseX - node.x;
+              mouseX -
+              node.x;
 
             const dy =
-              mouseY - node.y;
+              mouseY -
+              node.y;
 
             return (
               Math.sqrt(
@@ -1180,12 +1358,15 @@ export default function CascadeGraph({
 
       setTooltip({
         node: hovered,
+
         x:
           event.clientX -
           rect.left,
+
         y:
           event.clientY -
           rect.top,
+
         connections:
           edgeByNode.get(
             hovered.id,
@@ -1193,10 +1374,14 @@ export default function CascadeGraph({
       });
     };
 
+  /* ------------------------------------------------------------------------ */
+  /*                                UI                                        */
+  /* ------------------------------------------------------------------------ */
+
   return (
     <div
       ref={containerRef}
-      className="relative h-[440px] w-full overflow-hidden rounded-xl border border-zinc-800 bg-zinc-950"
+      className="relative h-[440px] w-full overflow-hidden border border-rails-border bg-rails-obsidian"
     >
       <canvas
         ref={canvasRef}
@@ -1212,104 +1397,220 @@ export default function CascadeGraph({
         className="absolute inset-0 h-full w-full cursor-crosshair"
       />
 
-      {data.nodes.length ===
-        0 && (
-        <div className="absolute inset-0 flex items-center justify-center bg-zinc-950/80 text-sm text-gray-500">
-          No active cascade nodes.
+      {/* ------------------------------------------------------------------ */
+      /*                              LEGEND                                 */
+      /* ------------------------------------------------------------------ */}
+
+      <div className="pointer-events-none absolute left-3 top-3 border border-rails-border bg-rails-surface/90 px-3 py-2 backdrop-blur-sm">
+        <div className="font-mono text-[8px] uppercase tracking-[0.16em] text-rails-textMuted">
+          Cascade Topology
+        </div>
+
+        <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1.5">
+          <div className="flex items-center gap-1.5">
+            <span
+              className="h-2 w-2 rounded-full bg-rails-cyan"
+              style={{
+                boxShadow:
+                  '0 0 8px rgba(56,189,248,0.65)',
+              }}
+            />
+
+            <span className="font-mono text-[8px] text-rails-textMuted">
+              Seed
+            </span>
+          </div>
+
+          <div className="flex items-center gap-1.5">
+            <span
+              className="h-2 w-2 rounded-full bg-rails-indigo"
+              style={{
+                boxShadow:
+                  '0 0 8px rgba(129,140,248,0.6)',
+              }}
+            />
+
+            <span className="font-mono text-[8px] text-rails-textMuted">
+              Amplifier
+            </span>
+          </div>
+
+          <div className="flex items-center gap-1.5">
+            <span className="h-2 w-2 rounded-full bg-sky-300" />
+
+            <span className="font-mono text-[8px] text-rails-textMuted">
+              Participant
+            </span>
+          </div>
+        </div>
+
+        <div className="mt-2 flex items-center gap-3 border-t border-rails-border pt-2">
+          <div className="flex items-center gap-1.5">
+            <span className="block h-px w-4 bg-rails-cyan" />
+            <span className="font-mono text-[8px] text-rails-textMuted">
+              Repost
+            </span>
+          </div>
+
+          <div className="flex items-center gap-1.5">
+            <span className="block h-px w-4 bg-slate-500/50" />
+            <span className="font-mono text-[8px] text-rails-textMuted">
+              View
+            </span>
+          </div>
+        </div>
+      </div>
+
+      {/* ------------------------------------------------------------------ */
+      /*                          GRAPH STATUS                               */
+      /* ------------------------------------------------------------------ */}
+
+      <div className="pointer-events-none absolute right-3 top-3 border border-rails-border bg-rails-surface/90 px-3 py-2 backdrop-blur-sm">
+        <div className="font-mono text-[8px] uppercase tracking-[0.14em] text-rails-textMuted">
+          Network
+        </div>
+
+        <div className="mt-1 font-mono text-[10px] font-semibold text-white">
+          {data.nodes.length}
+          {' '}
+          nodes
+          {' · '}
+          {edges.length}
+          {' '}
+          links
+        </div>
+      </div>
+
+      {/* ------------------------------------------------------------------ */
+      /*                        EMPTY STATE                                   */
+      /* ------------------------------------------------------------------ */}
+
+      {data.nodes.length === 0 && (
+        <div className="absolute inset-0 flex items-center justify-center bg-rails-obsidian/90">
+          <div className="border border-rails-border bg-rails-surface px-5 py-4 text-center">
+            <div className="font-mono text-[9px] uppercase tracking-[0.15em] text-rails-textMuted">
+              No Active Distribution Nodes
+            </div>
+
+            <p className="mt-2 text-xs text-rails-textMuted">
+              Adjust the replay position or influence
+              threshold to reveal cascade activity.
+            </p>
+          </div>
         </div>
       )}
 
+      {/* ------------------------------------------------------------------ */
+      /*                            TOOLTIP                                  */
+      /* ------------------------------------------------------------------ */}
+
       {tooltip && (
         <div
-          className="pointer-events-none absolute z-50 max-w-xs rounded-lg border border-zinc-700 bg-zinc-900 p-3 text-white shadow-2xl"
+          className="pointer-events-none absolute z-50 w-64 border border-rails-border bg-rails-surface/95 p-4 text-white shadow-2xl backdrop-blur-sm"
           style={{
             left:
               tooltip.x +
               15,
+
             top:
               tooltip.y +
               15,
           }}
         >
-          <div className="flex items-center gap-2 font-semibold">
-            <span
-              className="h-2.5 w-2.5 rounded-full"
-              style={{
-                backgroundColor:
-                  getNodeColor(
-                    tooltip.node
-                      .id,
-                    tooltip.node
-                      .role,
-                  ),
-              }}
-            />
+          <div className="flex items-start justify-between gap-3">
+            <div className="flex min-w-0 items-center gap-2">
+              <span
+                className="h-2.5 w-2.5 shrink-0 rounded-full"
+                style={{
+                  backgroundColor:
+                    getNodeColor(
+                      tooltip.node.id,
+                      tooltip.node.role,
+                    ),
 
-            {tooltip.node.label}
-          </div>
+                  boxShadow:
+                    `0 0 9px ${getNodeColor(
+                      tooltip.node.id,
+                      tooltip.node.role,
+                    )}`,
+                }}
+              />
 
-          <div className="mt-2 space-y-1 text-xs text-gray-300">
-            <div className="flex justify-between gap-4">
-              <span>
-                Role
-              </span>
+              <div className="min-w-0">
+                <div className="truncate text-xs font-semibold text-white">
+                  {tooltip.node.label}
+                </div>
 
-              <span className="font-medium text-gray-100">
-                {tooltip.node.role}
-              </span>
+                <div className="mt-0.5 font-mono text-[8px] uppercase tracking-[0.12em] text-rails-textMuted">
+                  {getRoleLabel(
+                    tooltip.node.role,
+                  )}
+                </div>
+              </div>
             </div>
 
-            <div className="flex justify-between gap-4">
-              <span>
+            <span className="font-mono text-[8px] text-rails-textMuted">
+              {tooltip.connections}
+              {' '}
+              links
+            </span>
+          </div>
+
+          <div className="mt-4 space-y-2 border-t border-rails-border pt-3">
+            <div className="flex items-center justify-between gap-4">
+              <span className="font-mono text-[9px] uppercase tracking-[0.1em] text-rails-textMuted">
                 Influence
               </span>
 
-              <span className="font-mono text-blue-400">
-                {tooltip.node.influence_score.toFixed(
-                  1,
-                )}
+              <span className="font-mono text-xs font-semibold text-rails-cyan">
+                {Number.isFinite(
+                  tooltip.node
+                    .influence_score,
+                )
+                  ? tooltip.node.influence_score.toFixed(
+                      1,
+                    )
+                  : '0.0'}
               </span>
             </div>
 
-            <div className="flex justify-between gap-4">
-              <span>
+            <div className="flex items-center justify-between gap-4">
+              <span className="font-mono text-[9px] uppercase tracking-[0.1em] text-rails-textMuted">
                 Followers
               </span>
 
-              <span className="font-mono text-gray-100">
+              <span className="font-mono text-xs text-white">
                 {tooltip.node.follower_count.toLocaleString()}
               </span>
             </div>
 
-            <div className="flex justify-between gap-4">
-              <span>
+            <div className="flex items-center justify-between gap-4">
+              <span className="font-mono text-[9px] uppercase tracking-[0.1em] text-rails-textMuted">
                 Views
               </span>
 
-              <span className="font-mono text-gray-100">
+              <span className="font-mono text-xs text-white">
                 {tooltip.node.views.toLocaleString()}
               </span>
             </div>
 
-            <div className="flex justify-between gap-4">
-              <span>
-                Downstream reach
+            <div className="flex items-center justify-between gap-4">
+              <span className="font-mono text-[9px] uppercase tracking-[0.1em] text-rails-textMuted">
+                Downstream Reach
               </span>
 
-              <span className="font-mono text-emerald-400">
+              <span className="font-mono text-xs font-semibold text-rails-indigo">
                 {tooltip.node.downstream_reach.toLocaleString()}
               </span>
             </div>
+          </div>
 
-            <div className="flex justify-between gap-4">
-              <span>
-                Connections
-              </span>
-
-              <span className="font-mono text-gray-100">
-                {tooltip.connections}
-              </span>
-            </div>
+          <div className="mt-3 border-t border-rails-border pt-2">
+            <p className="text-[9px] leading-4 text-rails-textMuted">
+              High-leverage positions are emphasized
+              because downstream reach is concentrated
+              around critical distribution points.
+            </p>
           </div>
         </div>
       )}

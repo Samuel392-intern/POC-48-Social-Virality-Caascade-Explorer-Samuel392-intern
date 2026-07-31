@@ -5,12 +5,17 @@ import type { CascadeData } from '@/types/cascade';
 interface ReplayControlsProps {
   isPlaying: boolean;
   setIsPlaying: (value: boolean) => void;
+
   currentTime: number;
   setCurrentTime: (
-    value: number | ((previous: number) => number),
+    value:
+      | number
+      | ((previous: number) => number),
   ) => void;
+
   speed: number;
   setSpeed: (value: number) => void;
+
   duration: number;
   data: CascadeData;
 }
@@ -23,6 +28,12 @@ const safeNumber = (
   Number.isFinite(value)
     ? value
     : fallback;
+
+function formatSeconds(
+  value: number,
+): string {
+  return `${value.toFixed(1)}s`;
+}
 
 export default function ReplayControls({
   isPlaying,
@@ -59,6 +70,14 @@ export default function ReplayControls({
           100,
       ),
     );
+
+  const replayState =
+    isPlaying
+      ? 'RUNNING'
+      : safeCurrentTime >=
+          safeDuration
+        ? 'COMPLETE'
+        : 'PAUSED';
 
   const handlePlayPause = () => {
     if (
@@ -144,47 +163,236 @@ export default function ReplayControls({
   height="700"
   viewBox="0 0 1200 700"
 >
-  <rect width="1200" height="700" fill="#09090b"/>
+  <rect
+    width="1200"
+    height="700"
+    fill="#030712"
+  />
+
+  <rect
+    x="32"
+    y="32"
+    width="1136"
+    height="636"
+    fill="#0B1117"
+    stroke="#1F2937"
+  />
 
   <text
-    x="40"
-    y="50"
-    fill="#f4f4f5"
+    x="56"
+    y="72"
+    fill="#38BDF8"
     font-family="Arial, sans-serif"
-    font-size="24"
+    font-size="10"
     font-weight="700"
+    letter-spacing="2"
   >
-    Social Virality Cascade Explorer
+    REAL RAILS INTELLIGENCE LIBRARY
   </text>
 
   <text
-    x="40"
-    y="80"
-    fill="#71717a"
+    x="56"
+    y="112"
+    fill="#E5E7EB"
     font-family="Arial, sans-serif"
+    font-size="26"
+    font-weight="700"
+  >
+    SOCIAL VIRALITY CASCADE EXPLORER
+  </text>
+
+  <text
+    x="56"
+    y="140"
+    fill="#64748B"
+    font-family="monospace"
+    font-size="12"
+  >
+    DISTRIBUTION &amp; DEMAND
+  </text>
+
+  <line
+    x1="56"
+    y1="166"
+    x2="1144"
+    y2="166"
+    stroke="#1F2937"
+  />
+
+  <text
+    x="56"
+    y="205"
+    fill="#64748B"
+    font-family="monospace"
+    font-size="10"
+  >
+    SCENARIO
+  </text>
+
+  <text
+    x="56"
+    y="228"
+    fill="#E5E7EB"
+    font-family="monospace"
     font-size="13"
   >
     ${data.scenario_id}
   </text>
 
   <text
-    x="40"
-    y="125"
-    fill="#a1a1aa"
-    font-family="Arial, sans-serif"
-    font-size="14"
+    x="56"
+    y="272"
+    fill="#64748B"
+    font-family="monospace"
+    font-size="10"
   >
-    Replay: ${Math.round(progressPercent)}%
+    REPLAY POSITION
   </text>
 
   <text
-    x="40"
-    y="150"
-    fill="#a1a1aa"
-    font-family="Arial, sans-serif"
-    font-size="14"
+    x="56"
+    y="298"
+    fill="#38BDF8"
+    font-family="monospace"
+    font-size="24"
+    font-weight="700"
   >
-    Events: ${data.events.length}
+    ${Math.round(progressPercent)}%
+  </text>
+
+  <text
+    x="56"
+    y="325"
+    fill="#94A3B8"
+    font-family="monospace"
+    font-size="12"
+  >
+    ${formatSeconds(
+      safeCurrentTime,
+    )} / ${formatSeconds(
+      safeDuration,
+    )}
+  </text>
+
+  <text
+    x="400"
+    y="205"
+    fill="#64748B"
+    font-family="monospace"
+    font-size="10"
+  >
+    EVENT COUNT
+  </text>
+
+  <text
+    x="400"
+    y="228"
+    fill="#E5E7EB"
+    font-family="monospace"
+    font-size="22"
+    font-weight="700"
+  >
+    ${data.events.length}
+  </text>
+
+  <text
+    x="400"
+    y="272"
+    fill="#64748B"
+    font-family="monospace"
+    font-size="10"
+  >
+    REPLAY SPEED
+  </text>
+
+  <text
+    x="400"
+    y="298"
+    fill="#818CF8"
+    font-family="monospace"
+    font-size="22"
+    font-weight="700"
+  >
+    ${safeSpeed.toFixed(1)}x
+  </text>
+
+  <text
+    x="400"
+    y="342"
+    fill="#64748B"
+    font-family="monospace"
+    font-size="10"
+  >
+    STATE
+  </text>
+
+  <text
+    x="400"
+    y="365"
+    fill="#E5E7EB"
+    font-family="monospace"
+    font-size="14"
+    font-weight="700"
+  >
+    ${replayState}
+  </text>
+
+  <line
+    x1="56"
+    y1="410"
+    x2="1144"
+    y2="410"
+    stroke="#1F2937"
+  />
+
+  <text
+    x="56"
+    y="448"
+    fill="#64748B"
+    font-family="monospace"
+    font-size="10"
+  >
+    GENERATED SNAPSHOT
+  </text>
+
+  <text
+    x="56"
+    y="480"
+    fill="#94A3B8"
+    font-family="Arial, sans-serif"
+    font-size="13"
+  >
+    Replay state captured from the event-driven
+  </text>
+
+  <text
+    x="56"
+    y="502"
+    fill="#94A3B8"
+    font-family="Arial, sans-serif"
+    font-size="13"
+  >
+    synthetic distribution cascade.
+  </text>
+
+  <text
+    x="56"
+    y="580"
+    fill="#64748B"
+    font-family="monospace"
+    font-size="10"
+  >
+    SOURCE
+  </text>
+
+  <text
+    x="56"
+    y="602"
+    fill="#E5E7EB"
+    font-family="monospace"
+    font-size="12"
+  >
+    SYNTHETIC / DERIVED ANALYTICS
   </text>
 </svg>
 `;
@@ -192,7 +400,8 @@ export default function ReplayControls({
     const blob = new Blob(
       [svg],
       {
-        type: 'image/svg+xml;charset=utf-8',
+        type:
+          'image/svg+xml;charset=utf-8',
       },
     );
 
@@ -214,109 +423,249 @@ export default function ReplayControls({
   };
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-5">
+      {/* Header */}
       <div>
-        <h3 className="mb-3 flex items-center gap-2 text-base font-bold text-gray-100">
-          <span className="h-2.5 w-2.5 rounded-full bg-emerald-500" />
-          Replay Mode
-        </h3>
+        <div className="flex items-center justify-between gap-3">
+          <div className="flex items-center gap-2">
+            <span
+              className={`h-1.5 w-1.5 rounded-full ${
+                isPlaying
+                  ? 'bg-rails-cyan shadow-[0_0_10px_rgba(56,189,248,0.9)]'
+                  : 'bg-rails-textMuted'
+              }`}
+            />
 
-        <div className="flex gap-3">
+            <h3 className="text-sm font-semibold text-white">
+              Replay / Event Stream
+            </h3>
+          </div>
+
+          <span className="font-mono text-[9px] uppercase tracking-[0.14em] text-rails-textMuted">
+            {replayState}
+          </span>
+        </div>
+
+        <p className="mt-2 text-xs leading-5 text-rails-textMuted">
+          Replay the causal event stream to inspect how
+          distribution structure changes over time.
+        </p>
+      </div>
+
+      {/* Play / reset controls */}
+      <div className="border-t border-rails-border pt-4">
+        <div className="flex gap-2">
           <button
             onClick={handlePlayPause}
-            className={`flex-1 rounded-lg px-4 py-2 text-sm font-medium text-white ${
+            className={`flex-1 border px-4 py-2.5 font-mono text-[10px] font-semibold uppercase tracking-[0.14em] transition-colors ${
               isPlaying
-                ? 'bg-amber-600 hover:bg-amber-700'
-                : 'bg-emerald-600 hover:bg-emerald-700'
+                ? 'border-rails-indigo bg-rails-indigo/10 text-rails-indigo hover:bg-rails-indigo/20'
+                : 'border-rails-cyan bg-rails-cyan text-slate-950 hover:bg-sky-300'
             }`}
           >
             {isPlaying
-              ? 'Pause'
-              : 'Play'}
+              ? 'Pause Stream'
+              : safeCurrentTime >=
+                  safeDuration
+                ? 'Replay Stream'
+                : 'Play Stream'}
           </button>
 
           <button
             onClick={handleReset}
-            className="rounded-lg bg-zinc-700 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-600"
+            className="border border-rails-border bg-rails-surfaceRaised px-4 py-2.5 font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-rails-textMuted transition-colors hover:border-rails-cyan/40 hover:text-rails-cyan"
           >
             Reset
           </button>
         </div>
       </div>
 
-      <div className="border-t border-zinc-800 pt-4">
-        <div className="mb-2 flex items-center justify-between">
-          <span className="text-xs font-semibold uppercase tracking-wider text-gray-500">
-            Replay Speed
-          </span>
+      {/* Replay progress */}
+      <div className="border-t border-rails-border pt-4">
+        <div className="mb-3 flex items-end justify-between gap-3">
+          <div>
+            <div className="font-mono text-[9px] font-semibold uppercase tracking-[0.14em] text-rails-textMuted">
+              Replay Position
+            </div>
+
+            <div className="mt-1 text-xl font-semibold text-white">
+              {Math.round(
+                progressPercent,
+              )}
+              <span className="ml-0.5 text-sm text-rails-textMuted">
+                %
+              </span>
+            </div>
+          </div>
+
+          <div className="text-right font-mono text-[10px] text-rails-textMuted">
+            {formatSeconds(
+              safeCurrentTime,
+            )}
+            {' / '}
+            {formatSeconds(
+              safeDuration,
+            )}
+          </div>
+        </div>
+
+        <div className="mb-2 h-1 bg-rails-border">
+          <div
+            className="h-full bg-rails-cyan shadow-[0_0_12px_rgba(56,189,248,0.45)] transition-[width] duration-100"
+            style={{
+              width: `${progressPercent}%`,
+            }}
+          />
+        </div>
+
+        <input
+          aria-label="Replay position"
+          type="range"
+          min={0}
+          max={safeDuration}
+          step={0.1}
+          value={Math.min(
+            safeCurrentTime,
+            safeDuration,
+          )}
+          onChange={
+            handleSliderChange
+          }
+          className="rails-slider h-1.5 w-full cursor-pointer appearance-none rounded-none bg-rails-border accent-rails-cyan"
+        />
+
+        <div className="mt-1 flex justify-between font-mono text-[9px] text-rails-textMuted">
+          <span>START</span>
+          <span>EVENT STREAM</span>
+          <span>END</span>
+        </div>
+      </div>
+
+      {/* Speed */}
+      <div className="border-t border-rails-border pt-4">
+        <div className="flex items-center justify-between gap-4">
+          <div>
+            <div className="font-mono text-[9px] font-semibold uppercase tracking-[0.14em] text-rails-textMuted">
+              Replay Speed
+            </div>
+
+            <p className="mt-1 text-[10px] text-rails-textMuted">
+              Controls how quickly the event stream is
+              traversed.
+            </p>
+          </div>
 
           <select
+            aria-label="Replay speed"
             value={safeSpeed}
             onChange={
               handleSpeedChange
             }
-            className="rounded-lg border border-zinc-700 bg-zinc-950 px-2 py-1 text-xs text-gray-100"
+            className="border border-rails-border bg-rails-surfaceRaised px-3 py-2 font-mono text-[10px] font-semibold text-white outline-none transition-colors hover:border-rails-cyan/40 focus:border-rails-cyan"
           >
             <option value={0.5}>
-              0.5x
+              0.5x / SLOW
             </option>
+
             <option value={1}>
-              1.0x
+              1.0x / NORMAL
             </option>
+
             <option value={2}>
-              2.0x
+              2.0x / FAST
             </option>
+
             <option value={5}>
-              5.0x
+              5.0x / HYPER
             </option>
           </select>
         </div>
+      </div>
 
-        <div className="flex items-center gap-3">
-          <span className="w-14 text-xs font-mono text-gray-500">
-            {Math.round(safeCurrentTime)}s
-          </span>
+      {/* Event state */}
+      <div className="grid grid-cols-2 gap-2 border-t border-rails-border pt-4">
+        <div className="border border-rails-border bg-slate-950/30 p-3">
+          <div className="font-mono text-[8px] uppercase tracking-[0.12em] text-rails-textMuted">
+            Events
+          </div>
 
-          <input
-            type="range"
-            min={0}
-            max={safeDuration}
-            step={0.1}
-            value={Math.min(
-              safeCurrentTime,
-              safeDuration,
-            )}
-            onChange={
-              handleSliderChange
-            }
-            className="h-1.5 flex-1 cursor-pointer appearance-none rounded-lg bg-zinc-700 accent-blue-500"
-          />
+          <div className="mt-1 text-lg font-semibold text-white">
+            {data.events.length}
+          </div>
+        </div>
 
-          <span className="w-14 text-right text-xs font-mono text-gray-500">
-            {Math.round(safeDuration)}s
-          </span>
+        <div className="border border-rails-border bg-slate-950/30 p-3">
+          <div className="font-mono text-[8px] uppercase tracking-[0.12em] text-rails-textMuted">
+            Nodes
+          </div>
+
+          <div className="mt-1 text-lg font-semibold text-white">
+            {data.nodes.length}
+          </div>
         </div>
       </div>
 
-      <div className="border-t border-zinc-800 pt-4">
-        <div className="mb-2 text-xs font-semibold uppercase tracking-wider text-gray-500">
-          Snapshot Export
+      {/* Snapshot export */}
+      <div className="border-t border-rails-border pt-4">
+        <div className="mb-3">
+          <div className="font-mono text-[9px] font-semibold uppercase tracking-[0.14em] text-rails-textMuted">
+            Snapshot Export
+          </div>
+
+          <p className="mt-1 text-[10px] leading-4 text-rails-textMuted">
+            Export the current replay state for analysis
+            or sharing.
+          </p>
         </div>
 
-        <div className="flex gap-2">
+        <div className="grid grid-cols-2 gap-2">
           <button
-            onClick={handleExportSvg}
-            className="flex-1 rounded-lg bg-indigo-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-indigo-500"
+            onClick={
+              handleExportSvg
+            }
+            className="border border-rails-indigo/50 bg-rails-indigo/5 px-3 py-2.5 font-mono text-[9px] font-semibold uppercase tracking-[0.12em] text-rails-indigo transition-colors hover:border-rails-indigo hover:bg-rails-indigo/10"
           >
             SVG Graph
           </button>
 
           <button
-            onClick={handleExportPng}
-            className="flex-1 rounded-lg bg-zinc-700 px-3 py-1.5 text-xs font-medium text-white hover:bg-zinc-600"
+            onClick={
+              handleExportPng
+            }
+            className="border border-rails-border bg-rails-surfaceRaised px-3 py-2.5 font-mono text-[9px] font-semibold uppercase tracking-[0.12em] text-rails-textMuted transition-colors hover:border-rails-cyan/50 hover:text-rails-cyan"
           >
             PNG Snapshot
           </button>
+        </div>
+      </div>
+
+      {/* Provenance */}
+      <div className="border border-rails-border bg-slate-950/30 p-3">
+        <div className="font-mono text-[8px] uppercase tracking-[0.14em] text-rails-textMuted">
+          Replay Provenance
+        </div>
+
+        <div className="mt-2 space-y-1 font-mono text-[9px] text-rails-textMuted">
+          <div className="flex justify-between gap-3">
+            <span>SCENARIO</span>
+            <span className="truncate text-rails-text">
+              {data.scenario_id}
+            </span>
+          </div>
+
+          <div className="flex justify-between gap-3">
+            <span>SOURCE</span>
+            <span className="text-rails-cyan">
+              SYNTHETIC
+            </span>
+          </div>
+
+          <div className="flex justify-between gap-3">
+            <span>METRICS</span>
+            <span className="text-rails-indigo">
+              DERIVED
+            </span>
+          </div>
         </div>
       </div>
     </div>

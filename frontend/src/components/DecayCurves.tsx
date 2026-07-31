@@ -1,7 +1,7 @@
 'use client';
 
-import { useMemo } from "react";
-import type { CascadeData } from "@/types/cascade";
+import { useMemo } from 'react';
+import type { CascadeData } from '@/types/cascade';
 import {
   AreaChart,
   Area,
@@ -11,7 +11,7 @@ import {
   Tooltip,
   ResponsiveContainer,
   ReferenceLine,
-} from "recharts";
+} from 'recharts';
 
 interface DecayCurvesProps {
   data: CascadeData;
@@ -26,6 +26,32 @@ interface ChartPoint {
   activeSpreaders: number;
 }
 
+function getDecayInterpretation(
+  velocity: number,
+  peak: number,
+): string {
+  if (peak <= 0) {
+    return 'NO MEASURABLE MOMENTUM';
+  }
+
+  const ratio =
+    velocity / peak;
+
+  if (ratio >= 0.75) {
+    return 'PEAK-ADJACENT MOMENTUM';
+  }
+
+  if (ratio >= 0.5) {
+    return 'ACTIVE PROPAGATION';
+  }
+
+  if (ratio >= 0.25) {
+    return 'MOMENTUM DECAYING';
+  }
+
+  return 'LOW RESIDUAL MOMENTUM';
+}
+
 export default function DecayCurves({
   data,
   currentTime,
@@ -34,27 +60,52 @@ export default function DecayCurves({
   const {
     chartData,
     activeTimestamp,
+    peakVelocity,
     halfPeak,
   } = useMemo(() => {
     const sorted = [...data.metrics]
       .map((metric) => ({
-        timestamp: new Date(
-          metric.timestamp,
-        ).getTime(),
-        velocity: metric.velocity,
-        reposts: metric.reposts,
+        timestamp:
+          new Date(
+            metric.timestamp,
+          ).getTime(),
+
+        velocity:
+          Number.isFinite(
+            metric.velocity,
+          )
+            ? metric.velocity
+            : 0,
+
+        reposts:
+          Number.isFinite(
+            metric.reposts,
+          )
+            ? metric.reposts
+            : 0,
+
         activeSpreaders:
-          metric.active_spreaders,
+          Number.isFinite(
+            metric.active_spreaders,
+          )
+            ? metric.active_spreaders
+            : 0,
       }))
       .sort(
         (a, b) =>
-          a.timestamp - b.timestamp,
+          a.timestamp -
+          b.timestamp,
       );
 
     if (sorted.length === 0) {
       return {
-        chartData: [] as ChartPoint[],
+        chartData:
+          [] as ChartPoint[],
+
         activeTimestamp: 0,
+
+        peakVelocity: 0,
+
         halfPeak: 0,
       };
     }
@@ -63,8 +114,9 @@ export default function DecayCurves({
       sorted[0].timestamp;
 
     const last =
-      sorted[sorted.length - 1]
-        .timestamp;
+      sorted[
+        sorted.length - 1
+      ].timestamp;
 
     const replayRatio =
       duration > 0
@@ -72,7 +124,8 @@ export default function DecayCurves({
             0,
             Math.min(
               1,
-              currentTime / duration,
+              currentTime /
+                duration,
             ),
           )
         : 0;
@@ -82,16 +135,26 @@ export default function DecayCurves({
       replayRatio *
         (last - first);
 
-    const peak = Math.max(
-      ...sorted.map(
-        (point) => point.velocity,
-      ),
-    );
+    const peak =
+      Math.max(
+        ...sorted.map(
+          (point) =>
+            point.velocity,
+        ),
+      );
 
     return {
-      chartData: sorted,
-      activeTimestamp: activeTs,
-      halfPeak: peak / 2,
+      chartData:
+        sorted,
+
+      activeTimestamp:
+        activeTs,
+
+      peakVelocity:
+        peak,
+
+      halfPeak:
+        peak / 2,
     };
   }, [
     data.metrics,
@@ -99,25 +162,30 @@ export default function DecayCurves({
     duration,
   ]);
 
+  const latest =
+    chartData[
+      chartData.length - 1
+    ];
+
   const formatTick = (
     value: number,
-  ) => {
-    const date = new Date(value);
-
-    return date.toLocaleTimeString(
+  ) =>
+    new Date(
+      value,
+    ).toLocaleTimeString(
       [],
       {
-        hour: "2-digit",
-        minute: "2-digit",
+        hour: '2-digit',
+        minute: '2-digit',
       },
     );
-  };
 
   const CustomTooltip = ({
     active,
     payload,
   }: {
     active?: boolean;
+
     payload?: Array<{
       payload: ChartPoint;
     }>;
@@ -134,39 +202,70 @@ export default function DecayCurves({
       payload[0].payload;
 
     return (
-      <div className="rounded-lg border border-zinc-700 bg-zinc-900 p-3 text-xs text-white shadow-xl">
-        <p className="font-semibold">
+      <div className="min-w-[220px] border border-rails-border bg-rails-surface/95 p-3 text-white shadow-2xl backdrop-blur-sm">
+        <div className="font-mono text-[9px] uppercase tracking-[0.14em] text-rails-textMuted">
+          Propagation Decay
+        </div>
+
+        <p className="mt-1 text-xs font-semibold text-white">
           {new Date(
             point.timestamp,
-          ).toLocaleTimeString([], {
-            hour: "2-digit",
-            minute: "2-digit",
-            second: "2-digit",
-          })}
+          ).toLocaleTimeString(
+            [],
+            {
+              hour: '2-digit',
+              minute:
+                '2-digit',
+              second:
+                '2-digit',
+            },
+          )}
         </p>
 
-        <div className="mt-2 space-y-1 text-gray-300">
-          <p>
-            Propagation velocity:{" "}
-            <span className="font-mono font-bold text-red-400">
-              {point.velocity.toFixed(1)}
-            </span>{" "}
-            reposts/min
-          </p>
+        <div className="mt-3 space-y-2 border-t border-rails-border pt-3">
+          <div className="flex items-center justify-between gap-4">
+            <span className="text-[10px] text-rails-textMuted">
+              Velocity
+            </span>
 
-          <p>
-            Reposts:{" "}
-            <span className="font-mono font-bold text-gray-100">
+            <span className="font-mono text-xs font-semibold text-rails-cyan">
+              {point.velocity.toFixed(
+                1,
+              )}
+              /min
+            </span>
+          </div>
+
+          <div className="flex items-center justify-between gap-4">
+            <span className="text-[10px] text-rails-textMuted">
+              Reposts
+            </span>
+
+            <span className="font-mono text-xs font-semibold text-white">
               {point.reposts}
             </span>
-          </p>
+          </div>
 
-          <p>
-            Active spreaders:{" "}
-            <span className="font-mono font-bold text-gray-100">
-              {point.activeSpreaders}
+          <div className="flex items-center justify-between gap-4">
+            <span className="text-[10px] text-rails-textMuted">
+              Active spreaders
             </span>
-          </p>
+
+            <span className="font-mono text-xs font-semibold text-white">
+              {
+                point.activeSpreaders
+              }
+            </span>
+          </div>
+        </div>
+
+        <div className="mt-3 border-t border-rails-border pt-2">
+          <div className="font-mono text-[8px] uppercase tracking-[0.12em] text-rails-cyan">
+            {getDecayInterpretation(
+              point.velocity,
+              peakVelocity,
+            )}
+          </div>
         </div>
       </div>
     );
@@ -174,48 +273,90 @@ export default function DecayCurves({
 
   if (chartData.length === 0) {
     return (
-      <div className="flex h-[220px] items-center justify-center text-sm text-gray-500">
+      <div className="flex h-[240px] items-center justify-center border border-rails-border bg-slate-950/20 text-xs text-rails-textMuted">
         No propagation metrics available.
       </div>
     );
   }
 
+  const safePeak =
+    Number.isFinite(
+      data.peak_velocity,
+    )
+      ? data.peak_velocity
+      : peakVelocity;
+
+  const safeHalfLife =
+    Number.isFinite(
+      data.half_life_minutes,
+    )
+      ? data.half_life_minutes
+      : 0;
+
   return (
     <div className="w-full">
-      <div className="mb-2 grid grid-cols-3 gap-2 text-xs">
-        <div className="rounded-lg bg-zinc-950 p-2">
-          <div className="text-gray-500">
+      {/* Intelligence summary */}
+      <div className="mb-4 grid grid-cols-3 gap-2">
+        <div className="border border-rails-border bg-slate-950/30 p-3">
+          <div className="font-mono text-[8px] uppercase tracking-[0.14em] text-rails-textMuted">
             Peak
           </div>
-          <div className="font-mono font-semibold text-red-400">
-            {data.peak_velocity.toFixed(
-              0,
-            )}
-            /min
+
+          <div className="mt-1 text-lg font-semibold text-rails-cyan">
+            {safePeak.toFixed(0)}
+          </div>
+
+          <div className="mt-0.5 text-[10px] text-rails-textMuted">
+            reposts / min
           </div>
         </div>
 
-        <div className="rounded-lg bg-zinc-950 p-2">
-          <div className="text-gray-500">
-            Half-life
+        <div className="border border-rails-border bg-slate-950/30 p-3">
+          <div className="font-mono text-[8px] uppercase tracking-[0.14em] text-rails-textMuted">
+            Half-Life
           </div>
-          <div className="font-mono font-semibold text-gray-100">
-            {data.half_life_minutes.toFixed(
-              1,
-            )}
-            m
+
+          <div className="mt-1 text-lg font-semibold text-rails-indigo">
+            {safeHalfLife.toFixed(1)}
+          </div>
+
+          <div className="mt-0.5 text-[10px] text-rails-textMuted">
+            minutes
           </div>
         </div>
 
-        <div className="rounded-lg bg-zinc-950 p-2">
-          <div className="text-gray-500">
-            Mode
+        <div className="border border-rails-border bg-slate-950/30 p-3">
+          <div className="font-mono text-[8px] uppercase tracking-[0.14em] text-rails-textMuted">
+            Method
           </div>
-          <div className="font-semibold text-gray-100">
+
+          <div className="mt-1 text-xs font-semibold text-white">
             Event-derived
+          </div>
+
+          <div className="mt-0.5 text-[10px] text-rails-textMuted">
+            observed velocity
           </div>
         </div>
       </div>
+
+      {/* Current interpretation */}
+      {latest && (
+        <div className="mb-3 border border-rails-cyan/20 bg-rails-cyan/[0.025] px-3 py-2">
+          <div className="flex items-center justify-between gap-3">
+            <span className="font-mono text-[8px] uppercase tracking-[0.14em] text-rails-textMuted">
+              Current Momentum
+            </span>
+
+            <span className="font-mono text-[9px] font-semibold text-rails-cyan">
+              {getDecayInterpretation(
+                latest.velocity,
+                peakVelocity,
+              )}
+            </span>
+          </div>
+        </div>
+      )}
 
       <div className="h-[195px] w-full">
         <ResponsiveContainer
@@ -226,14 +367,14 @@ export default function DecayCurves({
             data={chartData}
             margin={{
               top: 10,
-              right: 10,
+              right: 8,
               left: -20,
               bottom: 0,
             }}
           >
             <defs>
               <linearGradient
-                id="cascadeVelocityDecay"
+                id="cascadeVelocityDecayRails"
                 x1="0"
                 y1="0"
                 x2="0"
@@ -241,12 +382,13 @@ export default function DecayCurves({
               >
                 <stop
                   offset="5%"
-                  stopColor="#ef4444"
-                  stopOpacity={0.4}
+                  stopColor="#38BDF8"
+                  stopOpacity={0.28}
                 />
+
                 <stop
                   offset="95%"
-                  stopColor="#ef4444"
+                  stopColor="#38BDF8"
                   stopOpacity={0}
                 />
               </linearGradient>
@@ -254,30 +396,35 @@ export default function DecayCurves({
 
             <CartesianGrid
               strokeDasharray="3 3"
-              stroke="#374151"
-              opacity={0.2}
+              stroke="#1F2937"
+              opacity={0.7}
             />
 
             <XAxis
               dataKey="timestamp"
               type="number"
               domain={[
-                "dataMin",
-                "dataMax",
+                'dataMin',
+                'dataMax',
               ]}
               tickFormatter={
                 formatTick
               }
-              stroke="#9ca3af"
-              fontSize={10}
+              stroke="#64748B"
+              fontSize={9}
               tickLine={false}
+              axisLine={{
+                stroke:
+                  '#1F2937',
+              }}
               dy={8}
             />
 
             <YAxis
-              stroke="#9ca3af"
-              fontSize={10}
+              stroke="#64748B"
+              fontSize={9}
               tickLine={false}
+              axisLine={false}
               dx={-8}
               allowDecimals={false}
             />
@@ -286,18 +433,28 @@ export default function DecayCurves({
               content={
                 <CustomTooltip />
               }
+              cursor={{
+                stroke:
+                  '#38BDF8',
+                strokeOpacity:
+                  0.18,
+              }}
             />
 
             {halfPeak > 0 && (
               <ReferenceLine
                 y={halfPeak}
-                stroke="#71717a"
+                stroke="#818CF8"
+                strokeOpacity={0.7}
                 strokeDasharray="4 4"
                 label={{
-                  value: "50% PEAK",
-                  fill: "#a1a1aa",
+                  value:
+                    '50% PEAK',
+                  fill:
+                    '#818CF8',
                   fontSize: 8,
-                  position: "insideTopLeft",
+                  position:
+                    'insideTopLeft',
                 }}
               />
             )}
@@ -305,24 +462,37 @@ export default function DecayCurves({
             <Area
               type="monotone"
               dataKey="velocity"
-              stroke="#ef4444"
+              stroke="#38BDF8"
               strokeWidth={2}
               fillOpacity={1}
-              fill="url(#cascadeVelocityDecay)"
+              fill="url(#cascadeVelocityDecayRails)"
+              activeDot={{
+                r: 4,
+                fill: '#38BDF8',
+                stroke:
+                  '#030712',
+                strokeWidth: 2,
+              }}
             />
 
             {currentTime > 0 && (
               <ReferenceLine
-                x={activeTimestamp}
-                stroke="#f59e0b"
-                strokeWidth={1.5}
+                x={
+                  activeTimestamp
+                }
+                stroke="#38BDF8"
+                strokeWidth={1}
                 strokeDasharray="3 3"
                 label={{
-                  value: "REPLAY",
-                  fill: "#f59e0b",
+                  value:
+                    'REPLAY',
+                  fill:
+                    '#38BDF8',
                   fontSize: 8,
-                  position: "top",
-                  fontWeight: "bold",
+                  position:
+                    'top',
+                  fontWeight:
+                    'bold',
                 }}
               />
             )}
@@ -330,11 +500,14 @@ export default function DecayCurves({
         </ResponsiveContainer>
       </div>
 
-      <p className="mt-1 text-[11px] leading-4 text-gray-600">
-        Decay is derived from observed synthetic
-        repost velocity, not from a predefined
-        exponential curve.
-      </p>
+      <div className="mt-2 border-t border-rails-border pt-2">
+        <p className="text-[10px] leading-4 text-rails-textMuted">
+          Decay is derived from observed synthetic repost
+          velocity rather than a predefined exponential
+          curve. The 50% reference line shows when momentum
+          falls below half of the observed peak.
+        </p>
+      </div>
     </div>
   );
 }

@@ -1,26 +1,289 @@
 @import "tailwindcss";
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
-}
+/* -------------------------------------------------------------------------- */
+/*                            REAL RAILS THEME                                */
+/* -------------------------------------------------------------------------- */
 
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
+  /*
+   * Real Rails visual DNA
+   */
+  --color-rails-obsidian: #030712;
+  --color-rails-surface: #0B1117;
+  --color-rails-surfaceRaised: #0F1720;
+
+  --color-rails-cyan: #38BDF8;
+  --color-rails-indigo: #818CF8;
+
+  --color-rails-border: #1F2937;
+
+  --color-rails-muted: #64748B;
+  --color-rails-text: #E5E7EB;
+  --color-rails-textMuted: #94A3B8;
+
+  /*
+   * Typography
+   */
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+/* -------------------------------------------------------------------------- */
+/*                              GLOBAL ROOT                                   */
+/* -------------------------------------------------------------------------- */
+
+:root {
+  color-scheme: dark;
+
+  --background: #030712;
+  --foreground: #E5E7EB;
+
+  --rails-obsidian: #030712;
+  --rails-surface: #0B1117;
+  --rails-surface-raised: #0F1720;
+
+  --rails-cyan: #38BDF8;
+  --rails-indigo: #818CF8;
+
+  --rails-border: #1F2937;
+
+  --rails-muted: #64748B;
+  --rails-text-muted: #94A3B8;
+}
+
+/* -------------------------------------------------------------------------- */
+/*                                HTML                                        */
+/* -------------------------------------------------------------------------- */
+
+html {
+  min-height: 100%;
+  background: #030712;
+  color-scheme: dark;
+}
+
+/* -------------------------------------------------------------------------- */
+/*                                BODY                                        */
+/* -------------------------------------------------------------------------- */
+
+body {
+  min-height: 100%;
+  margin: 0;
+
+  background:
+    radial-gradient(
+      circle at 50% -10%,
+      rgba(56, 189, 248, 0.035),
+      transparent 38%
+    ),
+    #030712;
+
+  color: #E5E7EB;
+
+  font-family: var(--font-geist-sans),
+    ui-sans-serif,
+    system-ui,
+    sans-serif;
+
+  font-feature-settings:
+    "cv11",
+    "ss01";
+
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* -------------------------------------------------------------------------- */
+/*                        SELECTION / INTERACTION                             */
+/* -------------------------------------------------------------------------- */
+
+::selection {
+  background: rgba(56, 189, 248, 0.22);
+  color: #F8FAFC;
+}
+
+/* -------------------------------------------------------------------------- */
+/*                               SCROLLBARS                                   */
+/* -------------------------------------------------------------------------- */
+
+* {
+  scrollbar-width: thin;
+  scrollbar-color:
+    #1F2937
+    #030712;
+}
+
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: #030712;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #1F2937;
+  border: 2px solid #030712;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #334155;
+}
+
+/* -------------------------------------------------------------------------- */
+/*                         REAL RAILS COMPONENTS                             */
+/* -------------------------------------------------------------------------- */
+
+@layer components {
+  /*
+   * Shared slider thumb
+   */
+  .rails-slider {
+    height: 6px;
+    background: #1F2937;
+  }
+
+  .rails-slider::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+
+    width: 12px;
+    height: 12px;
+
+    border-radius: 9999px;
+
+    background: #38BDF8;
+
+    border: 2px solid #030712;
+
+    box-shadow:
+      0 0 0 1px #38BDF8,
+      0 0 10px rgba(56, 189, 248, 0.35);
+  }
+
+  .rails-slider::-moz-range-thumb {
+    width: 12px;
+    height: 12px;
+
+    border-radius: 9999px;
+
+    background: #38BDF8;
+
+    border: 2px solid #030712;
+
+    box-shadow:
+      0 0 0 1px #38BDF8,
+      0 0 10px rgba(56, 189, 248, 0.35);
+  }
+
+  /*
+   * Indigo slider variant
+   */
+  .rails-slider-indigo::-webkit-slider-thumb {
+    background: #818CF8;
+
+    box-shadow:
+      0 0 0 1px #818CF8,
+      0 0 10px rgba(129, 140, 248, 0.35);
+  }
+
+  .rails-slider-indigo::-moz-range-thumb {
+    background: #818CF8;
+
+    box-shadow:
+      0 0 0 1px #818CF8,
+      0 0 10px rgba(129, 140, 248, 0.35);
+  }
+
+  /*
+   * Subtle intelligence-terminal grid.
+   *
+   * Used selectively by loading/empty states or future
+   * terminal surfaces. It is intentionally low contrast.
+   */
+  .rails-grid {
+    background-image:
+      linear-gradient(
+        rgba(31, 41, 55, 0.18) 1px,
+        transparent 1px
+      ),
+      linear-gradient(
+        90deg,
+        rgba(31, 41, 55, 0.18) 1px,
+        transparent 1px
+      );
+
+    background-size: 32px 32px;
+  }
+
+  /*
+   * Standard Real Rails panel surface.
+   */
+  .rails-panel {
+    border: 1px solid #1F2937;
+    background: #0B1117;
+  }
+
+  /*
+   * Slightly raised panel.
+   */
+  .rails-panel-raised {
+    border: 1px solid #1F2937;
+    background: #0F1720;
+  }
+
+  /*
+   * Cyan intelligence glow.
+   */
+  .rails-glow {
+    box-shadow:
+      0 0 24px
+      rgba(56, 189, 248, 0.08);
+  }
+
+  /*
+   * Stronger cyan focus glow.
+   */
+  .rails-glow-strong {
+    box-shadow:
+      0 0 30px
+      rgba(56, 189, 248, 0.14);
   }
 }
 
-body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+/* -------------------------------------------------------------------------- */
+/*                         FORM CONTROL RESET                                 */
+/* -------------------------------------------------------------------------- */
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+}
+
+button,
+select {
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* -------------------------------------------------------------------------- */
+/*                         FOCUS ACCESSIBILITY                                */
+/* -------------------------------------------------------------------------- */
+
+button:focus-visible,
+select:focus-visible,
+input:focus-visible,
+textarea:focus-visible {
+  outline: 1px solid #38BDF8;
+  outline-offset: 2px;
+}
+
+/* -------------------------------------------------------------------------- */
+/*                           LINK DEFAULTS                                    */
+/* -------------------------------------------------------------------------- */
+
+a {
+  color: inherit;
 }
