@@ -1,15 +1,28 @@
-import { CascadeData } from '@/types/cascade';
+'use client';
+
+import type { CascadeData } from '@/types/cascade';
 
 interface ReplayControlsProps {
   isPlaying: boolean;
-  setIsPlaying: (val: boolean) => void;
+  setIsPlaying: (value: boolean) => void;
   currentTime: number;
-  setCurrentTime: (val: number | ((prev: number) => number)) => void;
+  setCurrentTime: (
+    value: number | ((previous: number) => number),
+  ) => void;
   speed: number;
-  setSpeed: (val: number) => void;
+  setSpeed: (value: number) => void;
   duration: number;
   data: CascadeData;
 }
+
+const safeNumber = (
+  value: unknown,
+  fallback = 0,
+) =>
+  typeof value === 'number' &&
+  Number.isFinite(value)
+    ? value
+    : fallback;
 
 export default function ReplayControls({
   isPlaying,
@@ -21,7 +34,40 @@ export default function ReplayControls({
   duration,
   data,
 }: ReplayControlsProps) {
+  const safeCurrentTime = safeNumber(
+    currentTime,
+    0,
+  );
+
+  const safeDuration = Math.max(
+    1,
+    safeNumber(duration, 1),
+  );
+
+  const safeSpeed = Math.max(
+    0.1,
+    safeNumber(speed, 1),
+  );
+
+  const progressPercent =
+    Math.min(
+      100,
+      Math.max(
+        0,
+        (safeCurrentTime /
+          safeDuration) *
+          100,
+      ),
+    );
+
   const handlePlayPause = () => {
+    if (
+      !isPlaying &&
+      safeCurrentTime >= safeDuration
+    ) {
+      setCurrentTime(0);
+    }
+
     setIsPlaying(!isPlaying);
   };
 
@@ -30,141 +76,246 @@ export default function ReplayControls({
     setIsPlaying(false);
   };
 
-  const handleSpeedChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
-    setSpeed(Number(e.target.value));
-  };
+  const handleSliderChange = (
+    event: React.ChangeEvent<HTMLInputElement>,
+  ) => {
+    const value = Number(
+      event.target.value,
+    );
 
-  const handleSliderChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    setCurrentTime(Number(e.target.value));
-  };
-
-  const handleExport = (format: 'SVG' | 'PNG') => {
-    // In a real app, this would query the canvas element and export
-    // We can simulate it nicely with a temporary file download or alert
-    const canvas = document.querySelector('canvas');
-    if (canvas && format === 'PNG') {
-      try {
-        const dataUrl = canvas.toDataURL('image/png');
-        const a = document.createElement('a');
-        a.href = dataUrl;
-        a.download = `cascade-snapshot-${new Date().getTime()}.png`;
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-        return;
-      } catch (err) {
-        console.error('Canvas export blocked by security origins', err);
-      }
+    if (Number.isFinite(value)) {
+      setCurrentTime(
+        Math.max(
+          0,
+          Math.min(
+            value,
+            safeDuration,
+          ),
+        ),
+      );
     }
-    
-    // Fallback alert
-    alert(`Exporting cascade snapshot as ${format}... (Complete. Check your browser downloads if local snapshot succeeded!)`);
+  };
+
+  const handleSpeedChange = (
+    event: React.ChangeEvent<HTMLSelectElement>,
+  ) => {
+    const value = Number(
+      event.target.value,
+    );
+
+    if (Number.isFinite(value)) {
+      setSpeed(value);
+    }
+  };
+
+  const handleExportPng = () => {
+    const canvas =
+      document.querySelector(
+        'canvas[data-cascade-graph="true"]',
+      ) as HTMLCanvasElement | null;
+
+    if (!canvas) {
+      console.error(
+        'Cascade graph canvas not found.',
+      );
+      return;
+    }
+
+    const dataUrl =
+      canvas.toDataURL('image/png');
+
+    const link =
+      document.createElement('a');
+
+    link.href = dataUrl;
+    link.download =
+      `cascade-${data.scenario_id}-snapshot.png`;
+
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  const handleExportSvg = () => {
+    const svg = `
+<svg
+  xmlns="http://www.w3.org/2000/svg"
+  width="1200"
+  height="700"
+  viewBox="0 0 1200 700"
+>
+  <rect width="1200" height="700" fill="#09090b"/>
+
+  <text
+    x="40"
+    y="50"
+    fill="#f4f4f5"
+    font-family="Arial, sans-serif"
+    font-size="24"
+    font-weight="700"
+  >
+    Social Virality Cascade Explorer
+  </text>
+
+  <text
+    x="40"
+    y="80"
+    fill="#71717a"
+    font-family="Arial, sans-serif"
+    font-size="13"
+  >
+    ${data.scenario_id}
+  </text>
+
+  <text
+    x="40"
+    y="125"
+    fill="#a1a1aa"
+    font-family="Arial, sans-serif"
+    font-size="14"
+  >
+    Replay: ${Math.round(progressPercent)}%
+  </text>
+
+  <text
+    x="40"
+    y="150"
+    fill="#a1a1aa"
+    font-family="Arial, sans-serif"
+    font-size="14"
+  >
+    Events: ${data.events.length}
+  </text>
+</svg>
+`;
+
+    const blob = new Blob(
+      [svg],
+      {
+        type: 'image/svg+xml;charset=utf-8',
+      },
+    );
+
+    const url =
+      URL.createObjectURL(blob);
+
+    const link =
+      document.createElement('a');
+
+    link.href = url;
+    link.download =
+      `cascade-${data.scenario_id}-snapshot.svg`;
+
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+
+    URL.revokeObjectURL(url);
   };
 
   return (
     <div className="space-y-4">
       <div>
-        <h3 className="font-bold text-base mb-3 text-gray-800 dark:text-gray-100 flex items-center gap-2">
-          <svg className="w-4 h-4 text-emerald-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-          </svg>
+        <h3 className="mb-3 flex items-center gap-2 text-base font-bold text-gray-100">
+          <span className="h-2.5 w-2.5 rounded-full bg-emerald-500" />
           Replay Mode
         </h3>
-        
-        <div className="flex items-center space-x-3">
+
+        <div className="flex gap-3">
           <button
             onClick={handlePlayPause}
-            className={`flex-1 px-4 py-2 text-white rounded-lg hover:opacity-95 transition-all flex items-center justify-center gap-2 font-medium text-sm shadow ${
-              isPlaying 
-                ? 'bg-amber-600 hover:bg-amber-700' 
+            className={`flex-1 rounded-lg px-4 py-2 text-sm font-medium text-white ${
+              isPlaying
+                ? 'bg-amber-600 hover:bg-amber-700'
                 : 'bg-emerald-600 hover:bg-emerald-700'
             }`}
           >
-            {isPlaying ? (
-              <>
-                <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
-                  <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zM7 8a1 1 0 012 0v4a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v4a1 1 0 102 0V8a1 1 0 00-1-1z" clipRule="evenodd" />
-                </svg>
-                Pause
-              </>
-            ) : (
-              <>
-                <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
-                  <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM9.555 7.168A1 1 0 008 8v4a1 1 0 001.555.832l3-2a1 1 0 000-1.664l-3-2z" clipRule="evenodd" />
-                </svg>
-                Play
-              </>
-            )}
+            {isPlaying
+              ? 'Pause'
+              : 'Play'}
           </button>
+
           <button
             onClick={handleReset}
-            className="px-4 py-2 bg-gray-600 dark:bg-gray-700 text-white rounded-lg hover:bg-gray-700 dark:hover:bg-gray-600 transition-colors flex items-center justify-center gap-2 font-medium text-sm"
+            className="rounded-lg bg-zinc-700 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-600"
           >
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 1121.21 8H18.5" />
-            </svg>
             Reset
           </button>
         </div>
       </div>
 
-      <div className="border-t border-gray-200 dark:border-gray-700 pt-4">
-        <div className="flex items-center justify-between mb-2">
-          <span className="text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">Replay Speed:</span>
+      <div className="border-t border-zinc-800 pt-4">
+        <div className="mb-2 flex items-center justify-between">
+          <span className="text-xs font-semibold uppercase tracking-wider text-gray-500">
+            Replay Speed
+          </span>
+
           <select
-            value={speed}
-            onChange={handleSpeedChange}
-            className="px-2 py-1 border border-gray-300 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500 text-xs"
+            value={safeSpeed}
+            onChange={
+              handleSpeedChange
+            }
+            className="rounded-lg border border-zinc-700 bg-zinc-950 px-2 py-1 text-xs text-gray-100"
           >
-            <option value={0.5}>0.5x (Slow)</option>
-            <option value={1}>1.0x (Normal)</option>
-            <option value={2}>2.0x (Fast)</option>
-            <option value={5}>5.0x (Hyper)</option>
+            <option value={0.5}>
+              0.5x
+            </option>
+            <option value={1}>
+              1.0x
+            </option>
+            <option value={2}>
+              2.0x
+            </option>
+            <option value={5}>
+              5.0x
+            </option>
           </select>
         </div>
-        
-        <div className="flex items-center space-x-3">
-          <div className="w-12 text-left text-xs font-mono text-gray-600 dark:text-gray-400">
-            {currentTime.toFixed(1)}s
-          </div>
+
+        <div className="flex items-center gap-3">
+          <span className="w-14 text-xs font-mono text-gray-500">
+            {Math.round(safeCurrentTime)}s
+          </span>
+
           <input
             type="range"
-            min="0"
-            max={duration}
-            step="0.1"
-            value={currentTime}
-            onChange={handleSliderChange}
-            className="flex-1 accent-blue-500 h-1.5 bg-gray-200 dark:bg-gray-700 rounded-lg appearance-none cursor-pointer"
+            min={0}
+            max={safeDuration}
+            step={0.1}
+            value={Math.min(
+              safeCurrentTime,
+              safeDuration,
+            )}
+            onChange={
+              handleSliderChange
+            }
+            className="h-1.5 flex-1 cursor-pointer appearance-none rounded-lg bg-zinc-700 accent-blue-500"
           />
-          <div className="w-12 text-right text-xs font-mono text-gray-600 dark:text-gray-400">
-            {duration}s
-          </div>
+
+          <span className="w-14 text-right text-xs font-mono text-gray-500">
+            {Math.round(safeDuration)}s
+          </span>
         </div>
       </div>
 
-      <div className="border-t border-gray-200 dark:border-gray-700 pt-4">
-        <div className="flex items-center justify-between mb-2">
-          <span className="text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">Snapshot Export:</span>
+      <div className="border-t border-zinc-800 pt-4">
+        <div className="mb-2 text-xs font-semibold uppercase tracking-wider text-gray-500">
+          Snapshot Export
         </div>
-        <div className="flex space-x-2">
+
+        <div className="flex gap-2">
           <button
-            onClick={() => handleExport('SVG')}
-            className="flex-1 px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg transition-colors flex items-center justify-center gap-1.5 text-xs font-medium"
+            onClick={handleExportSvg}
+            className="flex-1 rounded-lg bg-indigo-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-indigo-500"
           >
-            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
-            </svg>
-            SVG Layout
+            SVG Graph
           </button>
+
           <button
-            onClick={() => handleExport('PNG')}
-            className="flex-1 px-3 py-1.5 bg-zinc-700 hover:bg-zinc-800 text-white rounded-lg transition-colors flex items-center justify-center gap-1.5 text-xs font-medium"
+            onClick={handleExportPng}
+            className="flex-1 rounded-lg bg-zinc-700 px-3 py-1.5 text-xs font-medium text-white hover:bg-zinc-600"
           >
-            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L18 14m-2-2l1.586-1.586a2 2 0 012.828 0L20 12m-2 2l1.586-1.586a2 2 0 012.828 0L22 10m-2 2l1.586-1.586a2 2 0 012.828 0L24 8m-2 2l1.586-1.586a2 2 0 012.828 0L22 6" />
-            </svg>
-            PNG Render
+            PNG Snapshot
           </button>
         </div>
       </div>

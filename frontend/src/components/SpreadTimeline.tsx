@@ -1,5 +1,7 @@
-import { useMemo } from 'react';
-import { CascadeData } from '@/types/cascade';
+'use client';
+
+import { useMemo } from "react";
+import type { CascadeData } from "@/types/cascade";
 import {
   LineChart,
   Line,
@@ -9,7 +11,8 @@ import {
   Tooltip,
   ResponsiveContainer,
   ReferenceLine,
-} from 'recharts';
+  Legend,
+} from "recharts";
 
 interface SpreadTimelineProps {
   data: CascadeData;
@@ -17,109 +20,321 @@ interface SpreadTimelineProps {
   duration: number;
 }
 
-export default function SpreadTimeline({ data, currentTime, duration }: SpreadTimelineProps) {
-  // Process chart data
-  const { chartData, activeTimestamp } = useMemo(() => {
-    if (!data.timeline || data.timeline.length === 0) {
-      return { chartData: [], activeTimestamp: 0 };
-    }
+interface ChartPoint {
+  timestamp: number;
+  views: number;
+  reposts: number;
+  velocity: number;
+  activeSpreaders: number;
+}
 
-    const sorted = data.timeline
-      .map((d) => ({
-        ...d,
-        timestamp: new Date(d.time).getTime(),
+export default function SpreadTimeline({
+  data,
+  currentTime,
+  duration,
+}: SpreadTimelineProps) {
+  const {
+    chartData,
+    activeTimestamp,
+  } = useMemo(() => {
+    const sorted = [...data.metrics]
+      .map((metric) => ({
+        timestamp: new Date(
+          metric.timestamp,
+        ).getTime(),
+        views: metric.views,
+        reposts: metric.reposts,
+        velocity: metric.velocity,
+        activeSpreaders:
+          metric.active_spreaders,
       }))
-      .sort((a, b) => a.timestamp - b.timestamp);
+      .sort(
+        (a, b) =>
+          a.timestamp - b.timestamp,
+      );
 
     if (sorted.length === 0) {
-      return { chartData: [], activeTimestamp: 0 };
+      return {
+        chartData: [] as ChartPoint[],
+        activeTimestamp: 0,
+      };
     }
 
-    const tMin = sorted[0].timestamp;
-    const tMax = sorted[sorted.length - 1].timestamp;
-    const activeTs = tMin + (currentTime / duration) * (tMax - tMin);
+    const first =
+      sorted[0].timestamp;
 
-    return { chartData: sorted, activeTimestamp: activeTs };
-  }, [data.timeline, currentTime, duration]);
+    const last =
+      sorted[sorted.length - 1]
+        .timestamp;
 
-  const formatTick = (tickVal: number) => {
-    try {
-      return new Date(tickVal).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-    } catch {
-      return '';
+    const replayRatio =
+      duration > 0
+        ? Math.max(
+            0,
+            Math.min(
+              1,
+              currentTime / duration,
+            ),
+          )
+        : 0;
+
+    return {
+      chartData: sorted,
+      activeTimestamp:
+        first +
+        replayRatio *
+          (last - first),
+    };
+  }, [
+    data.metrics,
+    currentTime,
+    duration,
+  ]);
+
+  const formatTick = (
+    value: number,
+  ) =>
+    new Date(value).toLocaleTimeString(
+      [],
+      {
+        hour: "2-digit",
+        minute: "2-digit",
+      },
+    );
+
+  const formatCompact = (
+    value: number,
+  ) => {
+    if (value >= 1_000_000) {
+      return `${(
+        value / 1_000_000
+      ).toFixed(1)}M`;
     }
+
+    if (value >= 1_000) {
+      return `${(
+        value / 1_000
+      ).toFixed(1)}K`;
+    }
+
+    return String(
+      Math.round(value),
+    );
   };
 
-  const CustomTooltip = ({ active, payload }: any) => {
-    if (active && payload && payload.length) {
-      const dataPoint = payload[0].payload;
-      return (
-        <div className="bg-gray-900 border border-gray-700 rounded-lg p-2.5 shadow-md text-xs text-white font-sans">
-          <p className="font-semibold">{new Date(dataPoint.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}</p>
-          <p className="text-blue-400 mt-1">
-            Shares: <span className="font-bold font-mono">{dataPoint.count}</span>
+  const CustomTooltip = ({
+    active,
+    payload,
+  }: {
+    active?: boolean;
+    payload?: Array<{
+      payload: ChartPoint;
+    }>;
+  }) => {
+    if (
+      !active ||
+      !payload ||
+      payload.length === 0
+    ) {
+      return null;
+    }
+
+    const point =
+      payload[0].payload;
+
+    return (
+      <div className="rounded-lg border border-zinc-700 bg-zinc-900 p-3 text-xs text-white shadow-xl">
+        <p className="font-semibold">
+          {new Date(
+            point.timestamp,
+          ).toLocaleTimeString([], {
+            hour: "2-digit",
+            minute: "2-digit",
+            second: "2-digit",
+          })}
+        </p>
+
+        <div className="mt-2 space-y-1 text-gray-300">
+          <p>
+            Cumulative views:{" "}
+            <span className="font-mono font-bold text-emerald-400">
+              {point.views.toLocaleString()}
+            </span>
+          </p>
+
+          <p>
+            Reposts:{" "}
+            <span className="font-mono font-bold text-blue-400">
+              {point.reposts}
+            </span>
+          </p>
+
+          <p>
+            Velocity:{" "}
+            <span className="font-mono font-bold text-purple-400">
+              {point.velocity.toFixed(
+                1,
+              )}/min
+            </span>
+          </p>
+
+          <p>
+            Active spreaders:{" "}
+            <span className="font-mono font-bold text-gray-100">
+              {point.activeSpreaders}
+            </span>
           </p>
         </div>
-      );
-    }
-    return null;
+      </div>
+    );
   };
 
   if (chartData.length === 0) {
     return (
-      <div className="h-[200px] flex items-center justify-center text-gray-400 text-sm">
-        No timeline streams.
+      <div className="flex h-[220px] items-center justify-center text-sm text-gray-500">
+        No spread metrics available.
       </div>
     );
   }
 
   return (
-    <div className="w-full h-[220px]">
-      <ResponsiveContainer width="100%" height="100%">
-        <LineChart data={chartData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
-          <CartesianGrid strokeDasharray="3 3" stroke="#374151" opacity={0.2} />
-          <XAxis
-            dataKey="timestamp"
-            type="number"
-            domain={['dataMin', 'dataMax']}
-            tickFormatter={formatTick}
-            stroke="#9ca3af"
-            fontSize={10}
-            tickLine={false}
-            dy={8}
-          />
-          <YAxis
-            stroke="#9ca3af"
-            fontSize={10}
-            tickLine={false}
-            dx={-8}
-          />
-          <Tooltip content={<CustomTooltip />} />
-          <Line
-            type="monotone"
-            dataKey="count"
-            stroke="#3b82f6"
-            strokeWidth={2}
-            dot={{ r: 2, stroke: '#3b82f6', fill: '#3b82f6' }}
-            activeDot={{ r: 5 }}
-          />
-          {currentTime > 0 && (
-            <ReferenceLine
-              x={activeTimestamp}
-              stroke="#f59e0b"
-              strokeWidth={1.5}
+    <div className="w-full">
+      <div className="mb-2 grid grid-cols-2 gap-2 text-xs">
+        <div className="rounded-lg bg-zinc-950 p-2">
+          <div className="text-gray-500">
+            Current views
+          </div>
+          <div className="font-mono font-semibold text-emerald-400">
+            {formatCompact(
+              chartData[
+                chartData.length - 1
+              ].views,
+            )}
+          </div>
+        </div>
+
+        <div className="rounded-lg bg-zinc-950 p-2">
+          <div className="text-gray-500">
+            Current reposts
+          </div>
+          <div className="font-mono font-semibold text-blue-400">
+            {chartData[
+              chartData.length - 1
+            ].reposts}
+          </div>
+        </div>
+      </div>
+
+      <div className="h-[195px] w-full">
+        <ResponsiveContainer
+          width="100%"
+          height="100%"
+        >
+          <LineChart
+            data={chartData}
+            margin={{
+              top: 10,
+              right: 10,
+              left: -20,
+              bottom: 0,
+            }}
+          >
+            <CartesianGrid
               strokeDasharray="3 3"
-              label={{
-                value: 'REPLAY',
-                fill: '#f59e0b',
-                fontSize: 8,
-                position: 'top',
-                fontWeight: 'bold',
+              stroke="#374151"
+              opacity={0.2}
+            />
+
+            <XAxis
+              dataKey="timestamp"
+              type="number"
+              domain={[
+                "dataMin",
+                "dataMax",
+              ]}
+              tickFormatter={
+                formatTick
+              }
+              stroke="#9ca3af"
+              fontSize={10}
+              tickLine={false}
+              dy={8}
+            />
+
+            <YAxis
+              yAxisId="views"
+              stroke="#9ca3af"
+              fontSize={10}
+              tickLine={false}
+              dx={-8}
+              tickFormatter={
+                formatCompact
+              }
+            />
+
+            <YAxis
+              yAxisId="reposts"
+              orientation="right"
+              stroke="#9ca3af"
+              fontSize={10}
+              tickLine={false}
+              tickFormatter={
+                formatCompact
+              }
+            />
+
+            <Tooltip
+              content={
+                <CustomTooltip />
+              }
+            />
+
+            <Legend
+              wrapperStyle={{
+                fontSize: 10,
               }}
             />
-          )}
-        </LineChart>
-      </ResponsiveContainer>
+
+            <Line
+              yAxisId="views"
+              type="monotone"
+              dataKey="views"
+              name="Views"
+              stroke="#34d399"
+              strokeWidth={2}
+              dot={false}
+              activeDot={{ r: 4 }}
+            />
+
+            <Line
+              yAxisId="reposts"
+              type="monotone"
+              dataKey="reposts"
+              name="Reposts / interval"
+              stroke="#3b82f6"
+              strokeWidth={2}
+              dot={{ r: 2 }}
+              activeDot={{ r: 4 }}
+            />
+
+            {currentTime > 0 && (
+              <ReferenceLine
+                x={activeTimestamp}
+                stroke="#f59e0b"
+                strokeWidth={1.5}
+                strokeDasharray="3 3"
+                label={{
+                  value: "REPLAY",
+                  fill: "#f59e0b",
+                  fontSize: 8,
+                  position: "top",
+                  fontWeight: "bold",
+                }}
+              />
+            )}
+          </LineChart>
+        </ResponsiveContainer>
+      </div>
     </div>
   );
 }

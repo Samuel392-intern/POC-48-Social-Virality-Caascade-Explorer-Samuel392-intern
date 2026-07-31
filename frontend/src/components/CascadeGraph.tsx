@@ -1,292 +1,1317 @@
-import { useEffect, useRef, useState, useMemo } from 'react';
-import { CascadeData, Node } from '@/types/cascade';
+'use client';
+
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
+
+import type {
+  CascadeData,
+  CascadeNode,
+  PropagationEvent,
+} from '@/types/cascade';
+
+const GRAPH_SCALE = 1.25;
 
 interface CascadeGraphProps {
   data: CascadeData;
   showLabels: boolean;
-  nodeSizeScaling: number; // 10 to 100
+  nodeSizeScaling: number;
 }
 
-interface SimulatedNode extends Node {
+interface SimulatedNode extends CascadeNode {
   x: number;
   y: number;
   vx: number;
   vy: number;
-  originalSize: number;
+  radius: number;
 }
 
-export default function CascadeGraph({ data, showLabels, nodeSizeScaling }: CascadeGraphProps) {
-  const containerRef = useRef<HTMLDivElement>(null);
-  const canvasRef = useRef<HTMLCanvasElement>(null);
-  const [width, setWidth] = useState(0);
-  const [height, setHeight] = useState(0);
-  const [tooltip, setTooltip] = useState<{ show: boolean; x: number; y: number; content: string } | null>(null);
-  const nodesRef = useRef<SimulatedNode[]>([]);
+interface GraphEdge {
+  id: string;
+  source: string;
+  target: string;
+  timestamp: string;
+  action: PropagationEvent['action'];
+  depth: number;
+}
 
-  // Setup resize observer
-  useEffect(() => {
-    const resizeObserver = new ResizeObserver((entries) => {
-      for (let entry of entries) {
-        const rect = entry.contentRect;
-        setWidth(rect.width);
-        setHeight(rect.height);
-        if (canvasRef.current) {
-          canvasRef.current.width = rect.width;
-          canvasRef.current.height = rect.height;
-        }
-      }
+interface TooltipState {
+  node: CascadeNode;
+  x: number;
+  y: number;
+  connections: number;
+}
+
+/**
+ * Generate a deterministic color from the node ID.
+ *
+ * The seed remains orange so it remains visually identifiable.
+ * Every other node gets a stable hue derived from its ID.
+ */
+function getNodeColor(
+  nodeId: string,
+  role: CascadeNode['role'],
+): string {
+  if (role === 'seed') {
+    return '#f59e0b';
+  }
+
+  let hash = 0;
+
+  for (let index = 0; index < nodeId.length; index += 1) {
+    hash =
+      nodeId.charCodeAt(index) +
+      ((hash << 5) - hash);
+  }
+
+  const normalizedHash =
+    Math.abs(hash);
+
+  // Golden-angle style distribution gives much better
+  // separation between adjacent node colors.
+  const hue =
+    (normalizedHash * 137.508) % 360;
+
+  if (role === 'amplifier') {
+    return `hsl(${hue}, 82%, 62%)`;
+  }
+
+  return `hsl(${hue}, 68%, 52%)`;
+}
+
+function getNodeRadius(
+  node: CascadeNode,
+  scaling: number,
+): number {
+  const influence =
+    Math.max(
+      0,
+      Math.min(
+        100,
+        node.influence_score,
+      ),
+    ) / 100;
+
+  const reachBoost =
+    Math.min(
+      1,
+      Math.log10(
+        Math.max(
+          node.downstream_reach,
+          10,
+        ),
+      ) / 8,
+    );
+
+  const base =
+    9 +
+    influence * 11 +
+    reachBoost * 9;
+
+  return Math.max(
+    6,
+    base * (scaling / 50),
+  );
+}
+
+function drawBackground(
+  context: CanvasRenderingContext2D,
+  width: number,
+  height: number,
+) {
+  context.fillStyle = '#09090b';
+  context.fillRect(
+    0,
+    0,
+    width,
+    height,
+  );
+
+  // Subtle radial glow around the center.
+  const gradient =
+    context.createRadialGradient(
+      width / 2,
+      height / 2,
+      20,
+      width / 2,
+      height / 2,
+      Math.max(width, height) * 0.6,
+    );
+
+  gradient.addColorStop(
+    0,
+    'rgba(37, 99, 235, 0.08)',
+  );
+
+  gradient.addColorStop(
+    0.45,
+    'rgba(59, 130, 246, 0.025)',
+  );
+
+  gradient.addColorStop(
+    1,
+    'rgba(9, 9, 11, 0)',
+  );
+
+  context.fillStyle = gradient;
+
+  context.fillRect(
+    0,
+    0,
+    width,
+    height,
+  );
+
+  // Fine dot grid.
+  context.fillStyle =
+    'rgba(148, 163, 184, 0.10)';
+
+  const spacing = 28;
+
+  for (
+    let x = spacing;
+    x < width;
+    x += spacing
+  ) {
+    for (
+      let y = spacing;
+      y < height;
+      y += spacing
+    ) {
+      context.beginPath();
+
+      context.arc(
+        x,
+        y,
+        0.8,
+        0,
+        Math.PI * 2,
+      );
+
+      context.fill();
+    }
+  }
+}
+
+export default function CascadeGraph({
+  data,
+  showLabels,
+  nodeSizeScaling,
+}: CascadeGraphProps) {
+  const containerRef =
+    useRef<HTMLDivElement>(null);
+
+  const canvasRef =
+    useRef<HTMLCanvasElement>(null);
+
+  const nodesRef =
+    useRef<SimulatedNode[]>([]);
+
+  const dimensionsRef =
+    useRef({
+      width: 0,
+      height: 0,
     });
 
-    if (containerRef.current) {
-      resizeObserver.observe(containerRef.current);
+  const animationRef =
+    useRef<number | null>(null);
+
+  const [width, setWidth] =
+    useState(0);
+
+  const [height, setHeight] =
+    useState(0);
+
+  const [tooltip, setTooltip] =
+    useState<TooltipState | null>(
+      null,
+    );
+
+  const visibleNodes = useMemo(
+    () =>
+      new Set(
+        data.nodes.map(
+          (node) => node.id,
+        ),
+      ),
+    [data.nodes],
+  );
+
+  /**
+   * Derive graph links directly from the event causality.
+   *
+   * parent_event_id -> parent actor -> child actor
+   */
+  const edges = useMemo<GraphEdge[]>(
+    () => {
+      const eventLookup =
+        new Map(
+          data.events.map(
+            (event) => [
+              event.id,
+              event,
+            ],
+          ),
+        );
+
+      return data.events
+        .filter(
+          (event) =>
+            event.parent_event_id !==
+            null,
+        )
+        .map((event) => {
+          const parent =
+            eventLookup.get(
+              event.parent_event_id!,
+            );
+
+          if (!parent) {
+            return null;
+          }
+
+          if (
+            !visibleNodes.has(
+              parent.actor_id,
+            ) ||
+            !visibleNodes.has(
+              event.actor_id,
+            )
+          ) {
+            return null;
+          }
+
+          // Don't draw self-links.
+          if (
+            parent.actor_id ===
+            event.actor_id
+          ) {
+            return null;
+          }
+
+          return {
+            id: event.id,
+            source: parent.actor_id,
+            target: event.actor_id,
+            timestamp:
+              event.timestamp,
+            action:
+              event.action,
+            depth: event.depth,
+          };
+        })
+        .filter(
+          (
+            edge,
+          ): edge is GraphEdge =>
+            edge !== null,
+        );
+    },
+    [
+      data.events,
+      visibleNodes,
+    ],
+  );
+
+  const edgeByNode =
+    useMemo(() => {
+      const map =
+        new Map<string, number>();
+
+      for (const edge of edges) {
+        map.set(
+          edge.source,
+          (map.get(
+            edge.source,
+          ) ?? 0) + 1,
+        );
+
+        map.set(
+          edge.target,
+          (map.get(
+            edge.target,
+          ) ?? 0) + 1,
+        );
+      }
+
+      return map;
+    }, [edges]);
+
+  /**
+   * Keep the canvas dimensions synchronized with
+   * the fixed outer graph container.
+   */
+  useEffect(() => {
+    if (!containerRef.current) {
+      return;
     }
 
+    const observer =
+      new ResizeObserver(
+        (entries) => {
+          const rect =
+            entries[0]?.contentRect;
+
+          if (!rect) {
+            return;
+          }
+
+          dimensionsRef.current = {
+            width: rect.width,
+            height: rect.height,
+          };
+
+          setWidth(rect.width);
+          setHeight(rect.height);
+        },
+      );
+
+    observer.observe(
+      containerRef.current,
+    );
+
     return () => {
-      resizeObserver.disconnect();
+      observer.disconnect();
     };
   }, []);
 
-  // Update simulation when data or container dimensions change
-  useEffect(() => {
-    if (width === 0 || height === 0 || !data) return;
+  /**
+   * Draw the current graph frame.
+   */
+  const draw =
+    useCallback(() => {
+      const canvas =
+        canvasRef.current;
 
-    const widthPx = width;
-    const heightPx = height;
+      if (!canvas) {
+        return;
+      }
 
-    // Track existing positions to prevent visual node jumping
-    const existingNodesMap = new Map(nodesRef.current.map((n) => [n.id, n]));
+      const context =
+        canvas.getContext('2d');
 
-    const nodes: SimulatedNode[] = data.nodes.map((node) => {
-      const match = existingNodesMap.get(node.id);
-      return {
-        ...node,
-        x: match ? match.x : widthPx / 2 + (Math.random() - 0.5) * 100,
-        y: match ? match.y : heightPx / 2 + (Math.random() - 0.5) * 100,
-        vx: match ? match.vx : 0,
-        vy: match ? match.vy : 0,
-        originalSize: node.size,
-      };
-    });
+      if (!context) {
+        return;
+      }
 
-    nodesRef.current = nodes;
+      const {
+        width: widthPx,
+        height: heightPx,
+      } = dimensionsRef.current;
 
-    const simulation = () => {
-      const alpha = 0.05;
-      const gravity = 0.04;
-      const charge = -45;
-      const linkForce = 0.08;
+      if (
+        widthPx <= 0 ||
+        heightPx <= 0
+      ) {
+        return;
+      }
 
-      // Apply forces
-      nodes.forEach((node) => {
-        // Center gravity
-        node.vx += (widthPx / 2 - node.x) * gravity;
-        node.vy += (heightPx / 2 - node.y) * gravity;
+      context.clearRect(
+        0,
+        0,
+        widthPx,
+        heightPx,
+      );
 
-        // Electrostatic charge repulsion between all nodes
-        nodes.forEach((other) => {
-          if (node.id !== other.id) {
-            const dx = node.x - other.x;
-            const dy = node.y - other.y;
-            const dist = Math.sqrt(dx * dx + dy * dy) || 1;
-            const limit = (node.originalSize + other.originalSize) * (nodeSizeScaling / 50) + 10;
-            
-            if (dist < limit) {
-              const repel = (limit - dist) * 0.5;
-              node.vx += (dx / dist) * repel;
-              node.vy += (dy / dist) * repel;
-            } else {
-              const force = charge / (dist * dist);
-              node.vx += (dx / dist) * force;
-              node.vy += (dy / dist) * force;
-            }
-          }
-        });
-      });
+      drawBackground(
+        context,
+        widthPx,
+        heightPx,
+      );
 
-      // Edge link forces (pull connected nodes closer)
-      data.edges.forEach((edge) => {
-        const sourceNode = nodes.find((n) => n.id === edge.source);
-        const targetNode = nodes.find((n) => n.id === edge.target);
-        if (sourceNode && targetNode) {
-          const dx = targetNode.x - sourceNode.x;
-          const dy = targetNode.y - sourceNode.y;
-          const dist = Math.sqrt(dx * dx + dy * dy) || 1;
-          const pull = (dist - 60) * linkForce;
+      const centerX =
+        widthPx / 2;
 
-          sourceNode.vx += (dx / dist) * pull;
-          sourceNode.vy += (dy / dist) * pull;
-          targetNode.vx -= (dx / dist) * pull;
-          targetNode.vy -= (dy / dist) * pull;
+      const centerY =
+        heightPx / 2;
+
+      /**
+       * Visual graph zoom.
+       *
+       * The outer container remains exactly the same
+       * size. Only the canvas drawing is enlarged.
+       */
+      context.save();
+
+      context.translate(
+        centerX,
+        centerY,
+      );
+
+      context.scale(
+        GRAPH_SCALE,
+        GRAPH_SCALE,
+      );
+
+      context.translate(
+        -centerX,
+        -centerY,
+      );
+
+      const nodes =
+        nodesRef.current;
+
+      const nodeLookup =
+        new Map(
+          nodes.map(
+            (node) => [
+              node.id,
+              node,
+            ],
+          ),
+        );
+
+      /**
+       * Draw edges first so nodes render above them.
+       */
+      for (const edge of edges) {
+        const source =
+          nodeLookup.get(
+            edge.source,
+          );
+
+        const target =
+          nodeLookup.get(
+            edge.target,
+          );
+
+        if (!source || !target) {
+          continue;
         }
-      });
 
-      // Update positions and apply bounds constraint
-      nodes.forEach((node) => {
-        node.vx *= 0.85; // drag damping
-        node.vy *= 0.85;
-        node.x += node.vx * alpha;
-        node.y += node.vy * alpha;
+        const dx =
+          target.x - source.x;
 
-        const size = node.originalSize * (nodeSizeScaling / 50);
-        node.x = Math.max(size, Math.min(widthPx - size, node.x));
-        node.y = Math.max(size, Math.min(heightPx - size, node.y));
-      });
-    };
+        const dy =
+          target.y - source.y;
 
-    const draw = () => {
-      const canvas = canvasRef.current;
-      if (!canvas) return;
-      const ctx = canvas.getContext('2d');
-      if (!ctx) return;
+        const distance =
+          Math.sqrt(
+            dx * dx +
+              dy * dy,
+          ) || 1;
 
-      ctx.clearRect(0, 0, widthPx, heightPx);
+        const angle =
+          Math.atan2(dy, dx);
 
-      // Draw edges (links)
-      ctx.strokeStyle = 'rgba(156, 163, 175, 0.25)';
-      ctx.lineWidth = 1.5;
-      data.edges.forEach((edge) => {
-        const sourceNode = nodes.find((n) => n.id === edge.source);
-        const targetNode = nodes.find((n) => n.id === edge.target);
-        if (sourceNode && targetNode) {
-          ctx.beginPath();
-          ctx.moveTo(sourceNode.x, sourceNode.y);
-          ctx.lineTo(targetNode.x, targetNode.y);
-          ctx.stroke();
+        context.beginPath();
 
-          // Draw a small arrowhead towards target
-          const dx = targetNode.x - sourceNode.x;
-          const dy = targetNode.y - sourceNode.y;
-          const dist = Math.sqrt(dx * dx + dy * dy) || 1;
-          const targetRadius = targetNode.originalSize * (nodeSizeScaling / 50);
-          
-          // Draw arrow 3/4 way along the link
-          const arrowX = sourceNode.x + dx * 0.7;
-          const arrowY = sourceNode.y + dy * 0.7;
-          const angle = Math.atan2(dy, dx);
-          
-          ctx.fillStyle = 'rgba(156, 163, 175, 0.4)';
-          ctx.beginPath();
-          ctx.moveTo(arrowX, arrowY);
-          ctx.lineTo(arrowX - 6 * Math.cos(angle - Math.PI / 6), arrowY - 6 * Math.sin(angle - Math.PI / 6));
-          ctx.lineTo(arrowX - 6 * Math.cos(angle + Math.PI / 6), arrowY - 6 * Math.sin(angle + Math.PI / 6));
-          ctx.fill();
-        }
-      });
+        context.moveTo(
+          source.x,
+          source.y,
+        );
 
-      // Draw nodes
-      nodes.forEach((node) => {
-        const radius = node.originalSize * (nodeSizeScaling / 50);
-        
-        // Node outer glowing halo for influencers
-        const isInfluencer = data.influencers.some((inf) => inf.id === node.id);
+        context.lineTo(
+          target.x,
+          target.y,
+        );
+
+        context.strokeStyle =
+          edge.action ===
+          'repost'
+            ? 'rgba(96, 165, 250, 0.52)'
+            : 'rgba(113, 113, 122, 0.22)';
+
+        context.lineWidth =
+          edge.action ===
+          'repost'
+            ? 2
+            : 1;
+
+        context.stroke();
+
+        /**
+         * Direction arrow.
+         */
+        const arrowX =
+          source.x +
+          dx * 0.7;
+
+        const arrowY =
+          source.y +
+          dy * 0.7;
+
+        const arrowSize =
+          edge.action ===
+          'repost'
+            ? 7
+            : 5;
+
+        context.fillStyle =
+          edge.action ===
+          'repost'
+            ? 'rgba(147, 197, 253, 0.82)'
+            : 'rgba(161, 161, 170, 0.35)';
+
+        context.beginPath();
+
+        context.moveTo(
+          arrowX,
+          arrowY,
+        );
+
+        context.lineTo(
+          arrowX -
+            arrowSize *
+              Math.cos(
+                angle -
+                  Math.PI / 6,
+              ),
+          arrowY -
+            arrowSize *
+              Math.sin(
+                angle -
+                  Math.PI / 6,
+              ),
+        );
+
+        context.lineTo(
+          arrowX -
+            arrowSize *
+              Math.cos(
+                angle +
+                  Math.PI / 6,
+              ),
+          arrowY -
+            arrowSize *
+              Math.sin(
+                angle +
+                  Math.PI / 6,
+              ),
+        );
+
+        context.closePath();
+        context.fill();
+
+        // Keep TypeScript aware that distance is intentionally
+        // calculated for the edge frame and useful for future
+        // edge styling.
+        void distance;
+      }
+
+      /**
+       * Draw nodes.
+       */
+      for (const node of nodes) {
+        const isInfluencer =
+          data.influencers.some(
+            (influencer) =>
+              influencer.id ===
+              node.id,
+          );
+
+        const color =
+          getNodeColor(
+            node.id,
+            node.role,
+          );
+
+        /**
+         * Influencer glow uses the node's own color
+         * rather than a universal blue halo.
+         */
         if (isInfluencer) {
-          ctx.beginPath();
-          ctx.arc(node.x, node.y, radius + 4, 0, Math.PI * 2);
-          ctx.fillStyle = 'rgba(59, 130, 246, 0.15)';
-          ctx.fill();
+          context.save();
+
+          context.globalAlpha =
+            0.16;
+
+          context.shadowColor =
+            color;
+
+          context.shadowBlur =
+            18;
+
+          context.beginPath();
+
+          context.arc(
+            node.x,
+            node.y,
+            node.radius + 7,
+            0,
+            Math.PI * 2,
+          );
+
+          context.fillStyle =
+            color;
+
+          context.fill();
+
+          context.restore();
         }
 
-        ctx.beginPath();
-        ctx.arc(node.x, node.y, radius, 0, Math.PI * 2);
-        ctx.fillStyle = node.color;
-        ctx.fill();
-        
-        ctx.strokeStyle = isInfluencer ? 'rgba(59, 130, 246, 0.8)' : 'rgba(255, 255, 255, 0.2)';
-        ctx.lineWidth = isInfluencer ? 2 : 1;
-        ctx.stroke();
+        /**
+         * Soft node glow.
+         */
+        context.save();
 
-        // Node labels
+        context.shadowColor =
+          color;
+
+        context.shadowBlur =
+          isInfluencer
+            ? 14
+            : 8;
+
+        context.beginPath();
+
+        context.arc(
+          node.x,
+          node.y,
+          node.radius,
+          0,
+          Math.PI * 2,
+        );
+
+        context.fillStyle =
+          color;
+
+        context.fill();
+
+        context.restore();
+
+        /**
+         * Node border.
+         */
+        context.beginPath();
+
+        context.arc(
+          node.x,
+          node.y,
+          node.radius,
+          0,
+          Math.PI * 2,
+        );
+
+        context.strokeStyle =
+          isInfluencer
+            ? 'rgba(255, 255, 255, 0.88)'
+            : 'rgba(255, 255, 255, 0.22)';
+
+        context.lineWidth =
+          isInfluencer
+            ? 2
+            : 1;
+
+        context.stroke();
+
+        /**
+         * Labels.
+         */
         if (showLabels) {
-          ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
-          ctx.font = 'bold 9px sans-serif';
-          ctx.textAlign = 'center';
-          // Split label and print name part (e.g. "User 3" -> "U3")
-          const namePart = node.label.split(' ')[1] || node.label;
-          ctx.fillText(namePart, node.x, node.y + 3);
+          context.fillStyle =
+            'rgba(244, 244, 245, 0.95)';
+
+          context.font =
+            node.radius >= 15
+              ? '600 10px sans-serif'
+              : '600 9px sans-serif';
+
+          context.textAlign =
+            'center';
+
+          context.textBaseline =
+            'middle';
+
+          const shortLabel =
+            node.label.replace(
+              /^User\s+/i,
+              'U',
+            );
+
+          context.fillText(
+            shortLabel,
+            node.x,
+            node.y,
+          );
         }
-      });
-    };
+      }
 
-    // Animation frame hook
-    let animationFrameId: number;
-    const animate = () => {
-      simulation();
-      draw();
-      animationFrameId = requestAnimationFrame(animate);
-    };
+      context.restore();
+    }, [
+      data.influencers,
+      edges,
+      showLabels,
+    ]);
 
-    animate();
+  /**
+   * Force simulation.
+   */
+  const simulate =
+    useCallback(() => {
+      const {
+        width: widthPx,
+        height: heightPx,
+      } = dimensionsRef.current;
+
+      if (
+        widthPx <= 0 ||
+        heightPx <= 0
+      ) {
+        return;
+      }
+
+      const nodes =
+        nodesRef.current;
+
+      const nodeLookup =
+        new Map(
+          nodes.map(
+            (node) => [
+              node.id,
+              node,
+            ],
+          ),
+        );
+
+      const centerX =
+        widthPx / 2;
+
+      const centerY =
+        heightPx / 2;
+
+      /**
+       * Stronger center gravity keeps the enlarged
+       * network visually centered.
+       */
+      for (const node of nodes) {
+        node.vx +=
+          (centerX - node.x) *
+          0.002;
+
+        node.vy +=
+          (centerY - node.y) *
+          0.002;
+      }
+
+      /**
+       * Pairwise repulsion.
+       */
+      for (
+        let i = 0;
+        i < nodes.length;
+        i += 1
+      ) {
+        for (
+          let j = i + 1;
+          j < nodes.length;
+          j += 1
+        ) {
+          const a =
+            nodes[i];
+
+          const b =
+            nodes[j];
+
+          const dx =
+            a.x - b.x;
+
+          const dy =
+            a.y - b.y;
+
+          const distance =
+            Math.sqrt(
+              dx * dx +
+                dy * dy,
+            ) || 1;
+
+          const minimumDistance =
+            a.radius +
+            b.radius +
+            28;
+
+          const strength =
+            distance <
+            minimumDistance
+              ? (
+                  minimumDistance -
+                  distance
+                ) * 0.03
+              : 18 /
+                (distance *
+                  distance);
+
+          const ux =
+            dx / distance;
+
+          const uy =
+            dy / distance;
+
+          a.vx +=
+            ux * strength;
+
+          a.vy +=
+            uy * strength;
+
+          b.vx -=
+            ux * strength;
+
+          b.vy -=
+            uy * strength;
+        }
+      }
+
+      /**
+       * Link attraction.
+       */
+      for (const edge of edges) {
+        const source =
+          nodeLookup.get(
+            edge.source,
+          );
+
+        const target =
+          nodeLookup.get(
+            edge.target,
+          );
+
+        if (!source || !target) {
+          continue;
+        }
+
+        const dx =
+          target.x - source.x;
+
+        const dy =
+          target.y - source.y;
+
+        const distance =
+          Math.sqrt(
+            dx * dx +
+              dy * dy,
+          ) || 1;
+
+        const desiredDistance =
+          105;
+
+        const pull =
+          (
+            distance -
+            desiredDistance
+          ) * 0.0025;
+
+        const ux =
+          dx / distance;
+
+        const uy =
+          dy / distance;
+
+        source.vx +=
+          ux * pull;
+
+        source.vy +=
+          uy * pull;
+
+        target.vx -=
+          ux * pull;
+
+        target.vy -=
+          uy * pull;
+      }
+
+      /**
+       * Integrate.
+       */
+      for (const node of nodes) {
+        node.vx *= 0.88;
+        node.vy *= 0.88;
+
+        node.x += node.vx;
+        node.y += node.vy;
+
+        /**
+         * Keep nodes inside a slightly padded simulation
+         * area so visual scaling doesn't immediately clip them.
+         */
+        const padding =
+          node.radius +
+          8;
+
+        node.x = Math.max(
+          padding,
+          Math.min(
+            widthPx - padding,
+            node.x,
+          ),
+        );
+
+        node.y = Math.max(
+          padding,
+          Math.min(
+            heightPx - padding,
+            node.y,
+          ),
+        );
+      }
+    }, [edges]);
+
+  /**
+   * Synchronize simulated nodes with incoming data.
+   */
+  useEffect(() => {
+    if (
+      width <= 0 ||
+      height <= 0
+    ) {
+      return;
+    }
+
+    const existing =
+      new Map(
+        nodesRef.current.map(
+          (node) => [
+            node.id,
+            node,
+          ],
+        ),
+      );
+
+    nodesRef.current =
+      data.nodes.map(
+        (
+          node,
+          index,
+        ) => {
+          const old =
+            existing.get(
+              node.id,
+            );
+
+          const radius =
+            getNodeRadius(
+              node,
+              nodeSizeScaling,
+            );
+
+          const fallbackAngle =
+            (index /
+              Math.max(
+                data.nodes.length,
+                1,
+              )) *
+            Math.PI *
+            2;
+
+          /**
+           * Larger starting spread because the graph
+           * is intentionally visually larger.
+           */
+          const initialDistance =
+            Math.min(
+              width,
+              height,
+            ) * 0.23;
+
+          return {
+            ...node,
+
+            x:
+              old?.x ??
+              width / 2 +
+                Math.cos(
+                  fallbackAngle,
+                ) *
+                  initialDistance,
+
+            y:
+              old?.y ??
+              height / 2 +
+                Math.sin(
+                  fallbackAngle,
+                ) *
+                  initialDistance,
+
+            vx:
+              old?.vx ??
+              0,
+
+            vy:
+              old?.vy ??
+              0,
+
+            radius,
+          };
+        },
+      );
+  }, [
+    data.nodes,
+    width,
+    height,
+    nodeSizeScaling,
+  ]);
+
+  /**
+   * Keep radii synchronized with the size slider.
+   */
+  useEffect(() => {
+    nodesRef.current =
+      nodesRef.current.map(
+        (node) => ({
+          ...node,
+          radius:
+            getNodeRadius(
+              node,
+              nodeSizeScaling,
+            ),
+        }),
+      );
+  }, [nodeSizeScaling]);
+
+  /**
+   * Animation loop.
+   */
+  useEffect(() => {
+    const animate =
+      () => {
+        simulate();
+        draw();
+
+        animationRef.current =
+          requestAnimationFrame(
+            animate,
+          );
+      };
+
+    animationRef.current =
+      requestAnimationFrame(
+        animate,
+      );
 
     return () => {
-      cancelAnimationFrame(animationFrameId);
+      if (
+        animationRef.current !==
+        null
+      ) {
+        cancelAnimationFrame(
+          animationRef.current,
+        );
+      }
     };
-  }, [data, width, height, showLabels, nodeSizeScaling]);
+  }, [
+    draw,
+    simulate,
+  ]);
 
-  const handleMouseMove = (e: React.MouseEvent<HTMLCanvasElement>) => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
+  /**
+   * Mouse interaction.
+   *
+   * Convert screen coordinates back through the
+   * graph's visual scale so hover still tracks nodes.
+   */
+  const handleMouseMove =
+    (
+      event: React.MouseEvent<HTMLCanvasElement>,
+    ) => {
+      const canvas =
+        canvasRef.current;
 
-    const rect = canvas.getBoundingClientRect();
-    const mouseX = e.clientX - rect.left;
-    const mouseY = e.clientY - rect.top;
+      if (!canvas) {
+        return;
+      }
 
-    const hovered = nodesRef.current.find((node) => {
-      const dx = mouseX - node.x;
-      const dy = mouseY - node.y;
-      const dist = Math.sqrt(dx * dx + dy * dy);
-      const radius = node.originalSize * (nodeSizeScaling / 50);
-      return dist < radius + 3;
-    });
+      const rect =
+        canvas.getBoundingClientRect();
 
-    if (hovered) {
-      const connectionsCount = data.edges.filter(
-        (edge) => edge.source === hovered.id || edge.target === hovered.id
-      ).length;
+      const scaleX =
+        dimensionsRef.current.width /
+        rect.width;
+
+      const scaleY =
+        dimensionsRef.current.height /
+        rect.height;
+
+      const rawMouseX =
+        (event.clientX -
+          rect.left) *
+        scaleX;
+
+      const rawMouseY =
+        (event.clientY -
+          rect.top) *
+        scaleY;
+
+      const centerX =
+        dimensionsRef.current.width /
+        2;
+
+      const centerY =
+        dimensionsRef.current.height /
+        2;
+
+      const mouseX =
+        centerX +
+        (rawMouseX -
+          centerX) /
+          GRAPH_SCALE;
+
+      const mouseY =
+        centerY +
+        (rawMouseY -
+          centerY) /
+          GRAPH_SCALE;
+
+      const hovered =
+        nodesRef.current.find(
+          (node) => {
+            const dx =
+              mouseX - node.x;
+
+            const dy =
+              mouseY - node.y;
+
+            return (
+              Math.sqrt(
+                dx * dx +
+                  dy * dy,
+              ) <=
+              node.radius + 5
+            );
+          },
+        );
+
+      if (!hovered) {
+        setTooltip(null);
+        return;
+      }
 
       setTooltip({
-        show: true,
-        x: mouseX,
-        y: mouseY,
-        content: `
-          <div class="font-semibold text-gray-100 flex items-center gap-1.5">
-            <span class="w-2.5 h-2.5 rounded-full" style="background-color: ${hovered.color}"></span>
-            ${hovered.label}
-          </div>
-          <div class="text-xs text-gray-300 mt-1.5 space-y-0.5 font-sans">
-            <div>Influence: <span class="font-semibold font-mono text-blue-400">${Math.round(hovered.influence * 100)}%</span></div>
-            <div>Connections: <span class="font-semibold font-mono text-emerald-400">${connectionsCount}</span></div>
-          </div>
-        `,
+        node: hovered,
+        x:
+          event.clientX -
+          rect.left,
+        y:
+          event.clientY -
+          rect.top,
+        connections:
+          edgeByNode.get(
+            hovered.id,
+          ) ?? 0,
       });
-    } else {
-      setTooltip(null);
-    }
-  };
+    };
 
   return (
     <div
       ref={containerRef}
-      className="w-full h-[400px] bg-zinc-950 rounded-xl overflow-hidden relative border border-zinc-800"
+      className="relative h-[440px] w-full overflow-hidden rounded-xl border border-zinc-800 bg-zinc-950"
     >
       <canvas
         ref={canvasRef}
-        onMouseMove={handleMouseMove}
-        onMouseLeave={() => setTooltip(null)}
-        className="absolute inset-0 w-full h-full cursor-crosshair"
+        data-cascade-graph="true"
+        width={width}
+        height={height}
+        onMouseMove={
+          handleMouseMove
+        }
+        onMouseLeave={() =>
+          setTooltip(null)
+        }
+        className="absolute inset-0 h-full w-full cursor-crosshair"
       />
-      
-      {data.nodes.length === 0 && (
-        <div className="absolute inset-0 flex items-center justify-center text-gray-400 text-sm font-sans bg-zinc-950 bg-opacity-80">
-          No active cascade propagation nodes.
+
+      {data.nodes.length ===
+        0 && (
+        <div className="absolute inset-0 flex items-center justify-center bg-zinc-950/80 text-sm text-gray-500">
+          No active cascade nodes.
         </div>
       )}
 
-      {tooltip && tooltip.show && (
+      {tooltip && (
         <div
-          className="absolute z-50 pointer-events-none bg-zinc-900 border border-zinc-700 text-white rounded-lg p-2.5 shadow-2xl max-w-xs font-sans"
-          style={{ left: `${tooltip.x + 15}px`, top: `${tooltip.y + 15}px` }}
-          dangerouslySetInnerHTML={{ __html: tooltip.content }}
-        />
+          className="pointer-events-none absolute z-50 max-w-xs rounded-lg border border-zinc-700 bg-zinc-900 p-3 text-white shadow-2xl"
+          style={{
+            left:
+              tooltip.x +
+              15,
+            top:
+              tooltip.y +
+              15,
+          }}
+        >
+          <div className="flex items-center gap-2 font-semibold">
+            <span
+              className="h-2.5 w-2.5 rounded-full"
+              style={{
+                backgroundColor:
+                  getNodeColor(
+                    tooltip.node
+                      .id,
+                    tooltip.node
+                      .role,
+                  ),
+              }}
+            />
+
+            {tooltip.node.label}
+          </div>
+
+          <div className="mt-2 space-y-1 text-xs text-gray-300">
+            <div className="flex justify-between gap-4">
+              <span>
+                Role
+              </span>
+
+              <span className="font-medium text-gray-100">
+                {tooltip.node.role}
+              </span>
+            </div>
+
+            <div className="flex justify-between gap-4">
+              <span>
+                Influence
+              </span>
+
+              <span className="font-mono text-blue-400">
+                {tooltip.node.influence_score.toFixed(
+                  1,
+                )}
+              </span>
+            </div>
+
+            <div className="flex justify-between gap-4">
+              <span>
+                Followers
+              </span>
+
+              <span className="font-mono text-gray-100">
+                {tooltip.node.follower_count.toLocaleString()}
+              </span>
+            </div>
+
+            <div className="flex justify-between gap-4">
+              <span>
+                Views
+              </span>
+
+              <span className="font-mono text-gray-100">
+                {tooltip.node.views.toLocaleString()}
+              </span>
+            </div>
+
+            <div className="flex justify-between gap-4">
+              <span>
+                Downstream reach
+              </span>
+
+              <span className="font-mono text-emerald-400">
+                {tooltip.node.downstream_reach.toLocaleString()}
+              </span>
+            </div>
+
+            <div className="flex justify-between gap-4">
+              <span>
+                Connections
+              </span>
+
+              <span className="font-mono text-gray-100">
+                {tooltip.connections}
+              </span>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

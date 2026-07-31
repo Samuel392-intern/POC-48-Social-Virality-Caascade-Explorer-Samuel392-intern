@@ -1,81 +1,191 @@
-import { useState } from 'react';
-import { CascadeData } from '@/types/cascade';
+"use client";
+
+import { useState } from "react";
+import type { CascadeData } from "@/types/cascade";
 
 interface DownloadSampleDataProps {
   data: CascadeData;
+  onRegenerate?: () => Promise<void> | void;
 }
 
-export default function DownloadSampleData({ data }: DownloadSampleDataProps) {
-  const [isGenerating, setIsGenerating] = useState(false);
+export default function DownloadSampleData({
+  data,
+  onRegenerate,
+}: DownloadSampleDataProps) {
+  const [isDownloading, setIsDownloading] =
+    useState(false);
 
-  // Convert data to JSON string for download
-  const generateJson = () => {
-    return JSON.stringify(data, null, 2);
-  };
+  const [
+    isGenerating,
+    setIsGenerating,
+  ] = useState(false);
 
   const handleDownload = () => {
-    setIsGenerating(true);
-    const jsonData = generateJson();
-    const blob = new Blob([jsonData], { type: 'application/json' });
-    const url = window.URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `social-cascade-data-${new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-')}.json`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    window.URL.revokeObjectURL(url);
-    setIsGenerating(false);
+    setIsDownloading(true);
+
+    try {
+      const exportPayload = {
+        schema_version: "1.0",
+        exported_at:
+          new Date().toISOString(),
+        provenance: data.source,
+        scenario: {
+          id: data.scenario_id,
+          generated_at:
+            data.generated_at,
+        },
+        nodes: data.nodes,
+        events: data.events,
+        metrics: data.metrics,
+        analytics: {
+          influencers:
+            data.influencers,
+          peak_velocity:
+            data.peak_velocity,
+          peak_timestamp:
+            data.peak_timestamp,
+          half_life_minutes:
+            data.half_life_minutes,
+          top3_reach_share:
+            data.top3_reach_share,
+          control_score:
+            data.control_score,
+        },
+      };
+
+      const blob = new Blob(
+        [
+          JSON.stringify(
+            exportPayload,
+            null,
+            2,
+          ),
+        ],
+        {
+          type: "application/json",
+        },
+      );
+
+      const url =
+        URL.createObjectURL(
+          blob,
+        );
+
+      const link =
+        document.createElement(
+          "a",
+        );
+
+      link.href = url;
+
+      link.download =
+        `${data.scenario_id}.json`;
+
+      document.body.appendChild(
+        link,
+      );
+
+      link.click();
+
+      document.body.removeChild(
+        link,
+      );
+
+      URL.revokeObjectURL(
+        url,
+      );
+    } finally {
+      setIsDownloading(false);
+    }
   };
 
-  const handleGenerateMock = () => {
-    // In a real app, this might generate new mock data
-    // For now, we'll just regenerate the same data
-    setIsGenerating(true);
-    setTimeout(() => {
-      setIsGenerating(false);
-      // In a real implementation, we would fetch new data or regenerate
-      alert('New mock data generated! (In a real app, this would fetch fresh data)');
-    }, 1000);
-  };
+  const handleGenerate =
+    async () => {
+      if (!onRegenerate) {
+        return;
+      }
+
+      setIsGenerating(true);
+
+      try {
+        await onRegenerate();
+      } finally {
+        setIsGenerating(false);
+      }
+    };
 
   return (
     <div className="space-y-4">
-      <div className="border-t pt-4">
-        <h3 className="font-semibold mb-2 text-gray-800 dark:text-gray-100">Download Data</h3>
-        <p className="mb-3 text-sm text-gray-600 dark:text-gray-400">
-          Export the current cascade data for further analysis or sharing.
+      <div>
+        <h3 className="mb-2 font-semibold text-gray-100">
+          Scenario Data
+        </h3>
+
+        <p className="mb-3 text-sm text-gray-500">
+          Export the current scenario, including its
+          event stream and derived analytics.
         </p>
-        <div className="space-y-3">
+
+        <div className="space-y-2.5">
           <button
-            onClick={handleDownload}
-            disabled={isGenerating}
-            className={`w-full flex items-center justify-center px-4 py-2 bg-indigo-600 text-white rounded-lg hover:opacity-90 transition-opacity ${isGenerating ? 'opacity-50 cursor-not-allowed' : ''}`}
+            onClick={
+              handleDownload
+            }
+            disabled={
+              isDownloading ||
+              isGenerating
+            }
+            className="flex w-full items-center justify-center rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-indigo-500 disabled:cursor-not-allowed disabled:opacity-50"
           >
-            {isGenerating ? 'Preparing...' : 'Download JSON'}
-            {!isGenerating && (
-              <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1M5 10l5 5m0-5L5 5" />
-              </svg>
-            )}
+            {isDownloading
+              ? "Preparing..."
+              : "Download JSON"}
           </button>
 
-          <button
-            onClick={handleGenerateMock}
-            className="w-full flex items-center justify-center px-4 py-2 border border-gray-300 rounded-md hover:bg-gray-50 dark:hover:bg-gray-700 text-sm"
-          >
-            Generate New Mock Data
-            <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12l2 2 4-4M5 10h14a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2z" />
-            </svg>
-          </button>
-
-          <div className="text-xs text-gray-500 dark:text-gray-400 space-y-1">
-            <p><strong>Format:</strong> JSON</p>
-            <p><strong>Includes:</strong> Nodes, edges, timeline data, influencer metrics, decay curves</p>
-            <p><strong>Use Case:</strong> Import into analysis tools, share with team, or use for model training</p>
-          </div>
+          {onRegenerate && (
+            <button
+              onClick={
+                handleGenerate
+              }
+              disabled={
+                isDownloading ||
+                isGenerating
+              }
+              className="flex w-full items-center justify-center rounded-lg border border-zinc-700 px-4 py-2 text-sm font-medium text-gray-200 transition-colors hover:bg-zinc-800 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {isGenerating
+                ? "Generating Scenario..."
+                : "Generate New Scenario"}
+            </button>
+          )}
         </div>
+      </div>
+
+      <div className="border-t border-zinc-800 pt-3 text-xs text-gray-600">
+        <p>
+          <strong className="text-gray-500">
+            Format:
+          </strong>{" "}
+          JSON
+        </p>
+
+        <p className="mt-1">
+          <strong className="text-gray-500">
+            Includes:
+          </strong>{" "}
+          nodes, propagation events, metrics,
+          influencers and control analytics
+        </p>
+
+        <p className="mt-1">
+          <strong className="text-gray-500">
+            Provenance:
+          </strong>{" "}
+          {data.source.gdelt ===
+          "real"
+            ? "GDELT context + synthetic social cascade"
+            : "Synthetic social cascade + derived analytics"}
+        </p>
       </div>
     </div>
   );
