@@ -13,8 +13,9 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Social Virality Cascade Explorer - RRIL",
-  description: "Analyze the topology of information distribution and virality dynamics for the Real Rails Intelligence Library.",
+  title: "Social Virality Cascade Explorer | Real Rails Intelligence Library",
+  description:
+    "Distribution & Demand intelligence terminal for exploring synthetic social cascades, propagation concentration, and downstream reach.",
 };
 
 export default function RootLayout({
@@ -27,7 +28,9 @@ export default function RootLayout({
       lang="en"
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
-      <body className="min-h-full flex flex-col">{children}</body>
+      <body className="min-h-full bg-rails-obsidian font-sans text-slate-100">
+        {children}
+      </body>
     </html>
   );
 }
